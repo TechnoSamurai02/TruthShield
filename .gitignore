@@ -1,0 +1,9 @@
+node_modules/
+dist/
+venv/
+.venv/
+.venv-check/
+__pycache__/
+*.py[cod]
+.env
+.DS_Store

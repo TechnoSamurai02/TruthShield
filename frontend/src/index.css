@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #05060a;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+textarea,
+input {
+  font: inherit;
+}
+
+button:focus-visible,
+textarea:focus-visible,
+input:focus-visible {
+  outline: 2px solid rgba(103, 232, 249, 0.8);
+  outline-offset: 2px;
+}
+
+@layer components {
+  .panel {
+    @apply rounded-lg border border-white/10 p-4;
+    background-color: rgba(255, 255, 255, 0.045);
+  }
+}
+
+.apocalypse-bg {
+  background:
+    linear-gradient(90deg, rgba(34, 211, 238, 0.04) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(34, 211, 238, 0.035) 1px, transparent 1px),
+    linear-gradient(135deg, #05060a 0%, #070910 42%, #12090c 100%);
+  background-size: 48px 48px, 48px 48px, auto;
+}
+
+.command-grid {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.15));
+}
+
+.scan-sweep {
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0), rgba(34, 211, 238, 0.28), rgba(34, 211, 238, 0));
+  animation: sweep 3.4s linear infinite;
+}
+
+.scanner-bars {
+  height: 52px;
+  border: 1px solid rgba(103, 232, 249, 0.16);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, transparent 0 8%, rgba(103, 232, 249, 0.5) 8% 12%, transparent 12% 22%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  background-size: 84px 100%, auto;
+  animation: bars 1.2s linear infinite;
+}
+
+@keyframes sweep {
+  from {
+    transform: translateY(-90%);
+  }
+  to {
+    transform: translateY(230%);
+  }
+}
+
+@keyframes bars {
+  from {
+    background-position: 0 0, 0 0;
+  }
+  to {
+    background-position: 84px 0, 0 0;
+  }
+}
