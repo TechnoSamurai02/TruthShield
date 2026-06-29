@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageStat, UnidentifiedImageError
 
+from analyzers.enhanced import enhance_image_result
 from analyzers.metadata import extract_exif_metadata, has_camera_make_or_model, metadata_score
 from analyzers.scoring import (
     DISCLAIMER,
@@ -156,7 +157,7 @@ def _analyze_pil_image(
     if content_bytes is not None:
         technical_details["file_size_bytes"] = len(content_bytes)
 
-    return {
+    result = {
         "content_type": "image" if content_label == "image" else "video_frame",
         "truth_score": final_score,
         "risk_level": risk_level,
@@ -169,6 +170,13 @@ def _analyze_pil_image(
         "technical_details": technical_details,
         "disclaimer": DISCLAIMER,
     }
+    return enhance_image_result(
+        result=result,
+        image=image,
+        filename=filename,
+        content_bytes=content_bytes,
+        content_label=content_label,
+    )
 
 
 def _has_reasonable_dimensions(width: int, height: int) -> bool:

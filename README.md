@@ -20,6 +20,7 @@ The app is intentionally honest: it does not claim to prove that something is fa
 - Text/post analysis with demo examples for judges
 - Truth Score, risk level, verdict, summary, and recommendations
 - Evidence breakdown for metadata, visual consistency, compression, language risk, and claim risk
+- Free enhanced verification with local synthetic-image signals, optional C2PA provenance checks, optional free-capped Brave Search research, citations, and custom feedback
 - AI apocalypse command-center UI
 - Local-only MVP with no paid API keys required
 - Safe file handling with temporary video storage and cleanup
@@ -68,6 +69,29 @@ Health check:
 http://localhost:8000/api/health
 ```
 
+### Optional Free Enhanced Verification
+
+Enhanced analysis is enabled by default and remains free. If optional tools are missing, TruthShield falls back to deterministic local signals and explains what was unavailable in the report.
+
+Backend environment variables:
+
+```text
+ENABLE_ENHANCED_ANALYSIS=true
+BRAVE_SEARCH_API_KEY=
+WEB_RESEARCH_PER_SCAN_LIMIT=2
+WEB_RESEARCH_MONTHLY_LIMIT=150
+ENABLE_LOCAL_AI_MODELS=true
+AI_IMAGE_DETECTOR_MODELS=dima806/deepfake_vs_real_image_detection
+LOCAL_REASONING_BASE_URL=
+```
+
+Notes:
+
+- `BRAVE_SEARCH_API_KEY` is optional. When present, TruthShield uses free-capped Brave Web/Image Search requests for source leads and citations. When absent or quota-limited, analysis stays local.
+- Local Hugging Face detectors are optional and free, but require `transformers` and `torch` in the backend environment and may download model files. If they are unavailable, TruthShield uses a deterministic synthetic-likelihood fallback.
+- C2PA provenance checks use `c2pa-python` or `c2patool` if available. Missing content credentials are treated as a risk signal, not proof that media is fake.
+- Free web research is indexed web/image search from generated queries. It is not an unlimited exact reverse image search across the entire internet.
+
 ## Run The Frontend
 
 Open a second terminal:
@@ -89,6 +113,10 @@ The frontend assumes the backend is running at `http://localhost:8000`. To chang
 ```text
 VITE_API_BASE_URL=http://localhost:8000
 ```
+
+## Deployment
+
+Deployment notes for Cloudflare Pages and Hugging Face Spaces are in [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## API Endpoints
 
@@ -119,6 +147,13 @@ Returns image analysis:
 - `recommendations`
 - `evidence`
 - `technical_details`
+- `analysis_mode`
+- `confidence`
+- `detectors`
+- `provenance`
+- `web_research`
+- `citations`
+- `custom_feedback`
 - `disclaimer`
 
 ### POST `/api/analyze/video`
@@ -170,6 +205,9 @@ Image and video checks include:
 - Entropy
 - Blur / over-smoothing estimate
 - Compression and texture consistency
+- Local synthetic-image detector signals
+- Optional C2PA content credentials check
+- Optional free-capped indexed web/image research
 - Sampled video frame scores
 
 Text checks include:
@@ -177,6 +215,7 @@ Text checks include:
 - Source or link indicators
 - Balanced wording
 - Dates, locations, or verifiable details
+- Optional free-capped indexed web research for extracted claims
 - All-caps ratio
 - Urgency and fear language
 - Conspiracy-style phrases

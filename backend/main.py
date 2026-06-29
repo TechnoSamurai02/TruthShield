@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -26,16 +28,30 @@ app = FastAPI(
     version="1.0.0",
 )
 
+LOCAL_FRONTEND_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+
+def get_allowed_origins() -> list[str]:
+    configured_origins = os.getenv("FRONTEND_ORIGINS", "")
+    deployed_origins = [
+        origin.strip().rstrip("/")
+        for origin in configured_origins.split(",")
+        if origin.strip()
+    ]
+    return [*LOCAL_FRONTEND_ORIGINS, *deployed_origins]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=get_allowed_origins(),
+    allow_origin_regex=os.getenv("FRONTEND_ORIGIN_REGEX", r"https://.*\.pages\.dev"),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

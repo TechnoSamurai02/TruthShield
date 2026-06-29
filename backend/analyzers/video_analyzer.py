@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 import cv2
 import numpy as np
 
+from analyzers.enhanced import enhance_video_result
 from analyzers.image_analyzer import analyze_frame_array
 from analyzers.scoring import (
     DISCLAIMER,
@@ -87,7 +88,7 @@ def analyze_video_path(path: str, filename: str = "upload") -> Dict[str, Any]:
         avg_visual_score = float(np.mean([result["evidence"]["visual_consistency_score"] for result in frame_results]))
         metadata_score = 82.0 if frame_count > 0 and fps > 0 and width > 0 and height > 0 else 35.0
 
-        return {
+        result = {
             "content_type": "video",
             "truth_score": final_score,
             "risk_level": risk_level,
@@ -124,6 +125,7 @@ def analyze_video_path(path: str, filename: str = "upload") -> Dict[str, Any]:
             },
             "disclaimer": DISCLAIMER,
         }
+        return enhance_video_result(result, frame_results, filename)
     finally:
         capture.release()
 

@@ -17,6 +17,47 @@ class SuspiciousFrame(BaseModel):
     warnings: List[str]
 
 
+class DetectorResult(BaseModel):
+    name: str
+    status: str
+    label: Optional[str] = None
+    score: Optional[float] = None
+    synthetic_probability: Optional[float] = None
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ProvenanceResult(BaseModel):
+    status: str
+    score: float = Field(..., ge=0, le=100)
+    summary: str
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class Citation(BaseModel):
+    title: str
+    url: str
+    source: Optional[str] = None
+    snippet: Optional[str] = None
+
+
+class WebResearchResult(BaseModel):
+    status: str
+    provider: str
+    score: float = Field(..., ge=0, le=100)
+    queries: List[str] = Field(default_factory=list)
+    matches_found: int = 0
+    summary: str
+    citations: List[Citation] = Field(default_factory=list)
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CustomFeedback(BaseModel):
+    headline: str
+    explanation: str
+    evidence_notes: List[str] = Field(default_factory=list)
+    next_steps: List[str] = Field(default_factory=list)
+
+
 class AnalysisResponse(BaseModel):
     content_type: ContentType
     truth_score: int = Field(..., ge=0, le=100)
@@ -29,6 +70,13 @@ class AnalysisResponse(BaseModel):
     evidence: Dict[str, float]
     technical_details: Dict[str, Any]
     disclaimer: str
+    analysis_mode: str = "local_heuristic"
+    confidence: float = Field(0.55, ge=0, le=1)
+    detectors: List[DetectorResult] = Field(default_factory=list)
+    provenance: Optional[ProvenanceResult] = None
+    web_research: Optional[WebResearchResult] = None
+    citations: List[Citation] = Field(default_factory=list)
+    custom_feedback: Optional[CustomFeedback] = None
 
 
 class VideoAnalysisResponse(AnalysisResponse):

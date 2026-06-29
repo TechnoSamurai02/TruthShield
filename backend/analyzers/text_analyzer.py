@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List
 
+from analyzers.enhanced import enhance_text_result
 from analyzers.scoring import (
     DISCLAIMER,
     TEXT_RECOMMENDATIONS,
@@ -160,7 +161,7 @@ def analyze_text(text: str) -> Dict[str, Any]:
         "heuristic_note": "Text scoring uses explainable language heuristics and does not prove whether a claim is true or false.",
     }
 
-    return {
+    result = {
         "content_type": "text",
         "truth_score": final_score,
         "risk_level": risk_level,
@@ -179,6 +180,7 @@ def analyze_text(text: str) -> Dict[str, Any]:
         "technical_details": technical_details,
         "disclaimer": DISCLAIMER,
     }
+    return enhance_text_result(result, cleaned)
 
 
 def _matches_any(text: str, patterns: List[str]) -> bool:

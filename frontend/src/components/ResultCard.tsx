@@ -1,5 +1,6 @@
 import { FileWarning, ScanLine } from "lucide-react";
 import type { AnalysisResult } from "../lib/types";
+import EnhancedInsights from "./EnhancedInsights";
 import EvidenceBreakdown from "./EvidenceBreakdown";
 import RecommendationList from "./RecommendationList";
 import ScoreGauge from "./ScoreGauge";
@@ -77,6 +78,8 @@ export default function ResultCard({ result }: ResultCardProps) {
           </div>
         </section>
       )}
+
+      <EnhancedInsights result={result} />
 
       <div className="mt-4 rounded-lg border border-white/10 bg-white/5 p-4 text-sm leading-6 text-white/70">
         <strong className="text-white">Disclaimer: </strong>
