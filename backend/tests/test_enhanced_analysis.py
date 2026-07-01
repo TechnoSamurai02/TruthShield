@@ -87,6 +87,7 @@ class EnhancedAnalysisTests(unittest.TestCase):
         self.assertEqual(result["status"], "not_configured")
         self.assertEqual(result["provider"], "brave_search")
         self.assertEqual(result["score"], 50.0)
+        self.assertEqual(result["details"]["source_match"]["status"], "not_checked")
 
     def test_provenance_fallback_when_tools_absent(self) -> None:
         with patch("analyzers.provenance._try_c2pa_python", return_value=None), patch(
@@ -110,6 +111,10 @@ class EnhancedAnalysisTests(unittest.TestCase):
         AnalysisResponse(**text_result)
         self.assertIn("custom_feedback", image_result)
         self.assertIn("web_research", text_result)
+        fingerprint = image_result["technical_details"]["attachment_fingerprint"]
+        self.assertEqual(len(fingerprint["sha256"]), 64)
+        self.assertEqual(len(fingerprint["perceptual_hashes"]["phash"]), 16)
+        self.assertEqual(image_result["web_research"]["details"]["source_match"]["status"], "not_checked")
 
     def test_video_frame_and_video_schema_compatibility(self) -> None:
         with patch.dict(os.environ, {"ENABLE_LOCAL_AI_MODELS": "false", "BRAVE_SEARCH_API_KEY": ""}, clear=False):

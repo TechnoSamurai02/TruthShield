@@ -21,6 +21,8 @@ The app is intentionally honest: it does not claim to prove that something is fa
 - Truth Score, risk level, verdict, summary, and recommendations
 - Evidence breakdown for metadata, visual consistency, compression, language risk, and claim risk
 - Free enhanced verification with local synthetic-image signals, optional C2PA provenance checks, optional free-capped Brave Search research, citations, and custom feedback
+- Image attachment fingerprinting with SHA-256, average hash, difference hash, and pHash evidence
+- Attachment source-match reporting that separates exact fingerprint leads from weaker indexed context leads
 - AI apocalypse command-center UI
 - Local-only MVP with no paid API keys required
 - Safe file handling with temporary video storage and cleanup
@@ -90,7 +92,8 @@ Notes:
 - `BRAVE_SEARCH_API_KEY` is optional. When present, TruthShield uses free-capped Brave Web/Image Search requests for source leads and citations. When absent or quota-limited, analysis stays local.
 - Local Hugging Face detectors are optional and free, but require `transformers` and `torch` in the backend environment and may download model files. If they are unavailable, TruthShield uses a deterministic synthetic-likelihood fallback.
 - C2PA provenance checks use `c2pa-python` or `c2patool` if available. Missing content credentials are treated as a risk signal, not proof that media is fake.
-- Free web research is indexed web/image search from generated queries. It is not an unlimited exact reverse image search across the entire internet.
+- Image uploads are fingerprinted locally. SHA-256 identifies the exact file bytes, while perceptual hashes support visual similarity matching if you connect a reverse-image provider or your own dataset.
+- Free web research is indexed web/image search from generated queries. It is not an unlimited exact reverse image search across the entire internet. For pixel-level online matching, connect a dedicated reverse-image provider such as Google Lens, TinEye, Bing Visual Search, or an internal pHash database.
 
 ## Run The Frontend
 
@@ -206,6 +209,7 @@ Image and video checks include:
 - Blur / over-smoothing estimate
 - Compression and texture consistency
 - Local synthetic-image detector signals
+- Exact file fingerprint and perceptual hash signals
 - Optional C2PA content credentials check
 - Optional free-capped indexed web/image research
 - Sampled video frame scores
@@ -222,9 +226,25 @@ Text checks include:
 - Excessive punctuation
 - Strong claims without evidence
 
+## Making The Model Smarter
+
+TruthShield can improve in three practical ways:
+
+1. Add `BRAVE_SEARCH_API_KEY` so every scan can use indexed web/image search for source leads.
+2. Connect a reverse-image or web-detection provider for pixel-level matches. Good targets are Google Cloud Vision Web Detection, TinEye API, Bing Visual Search, or your own pHash index.
+3. Train or fine-tune an image classifier on a labeled dataset, then set `AI_IMAGE_DETECTOR_MODELS` to the exported Hugging Face model ID.
+
+Training notes:
+
+- Use balanced real-camera and AI-generated image data, with separate train, validation, and test splits.
+- Include images from multiple generators and editing workflows so the detector does not only learn one tool's artifacts.
+- Keep a holdout test set from sources the model never saw during training.
+- Report false positives and false negatives. A detector that flags real photos as AI too often is dangerous for users.
+- Treat model output as one evidence signal, not a final verdict.
+
 ## Limitations
 
-TruthShield AI is a hackathon MVP, not a forensic system. Its signals are explainable heuristics and can be wrong. Missing metadata does not prove an image is fake, and normal metadata does not prove an image is real. Video frame sampling can miss important moments. Text analysis can identify risky language patterns, but it cannot independently verify real-world facts.
+TruthShield AI is a hackathon MVP, not a forensic system. Its signals are explainable heuristics and can be wrong. Missing metadata does not prove an image is fake, and normal metadata does not prove an image is real. Attachment fingerprints are powerful only when there is a provider or dataset to compare against. Video frame sampling can miss important moments. Text analysis can identify risky language patterns, but it cannot independently verify real-world facts.
 
 Every result includes this disclaimer:
 

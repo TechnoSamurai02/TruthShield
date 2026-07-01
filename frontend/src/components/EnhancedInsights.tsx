@@ -1,4 +1,4 @@
-import { BadgeCheck, Bot, ExternalLink, FileSearch, Fingerprint, Sparkles } from "lucide-react";
+import { BadgeCheck, Bot, ExternalLink, FileSearch, Fingerprint, ScanSearch, Sparkles } from "lucide-react";
 import type { AnalysisResult, Citation, DetectorResult } from "../lib/types";
 
 interface EnhancedInsightsProps {
@@ -26,6 +26,41 @@ function statusTone(status: string): string {
 
 function readableStatus(status: string): string {
   return status.replace(/_/g, " ");
+}
+
+interface SourceMatch {
+  status?: string;
+  confidence?: number;
+  matched_citations?: number;
+  explanation?: string;
+}
+
+interface AttachmentFingerprint {
+  sha256?: string;
+  perceptual_hashes?: Record<string, string>;
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function sourceMatchFrom(result: AnalysisResult): SourceMatch | null {
+  const details = objectRecord(result.web_research?.details);
+  const sourceMatch = objectRecord(details?.source_match);
+  return sourceMatch ? (sourceMatch as SourceMatch) : null;
+}
+
+function fingerprintFrom(result: AnalysisResult): AttachmentFingerprint | null {
+  const technical = objectRecord(result.technical_details);
+  const webDetails = objectRecord(result.web_research?.details);
+  const fingerprint = objectRecord(technical?.attachment_fingerprint) ?? objectRecord(webDetails?.attachment_fingerprint);
+  return fingerprint ? (fingerprint as AttachmentFingerprint) : null;
+}
+
+function shortHash(value?: string): string | null {
+  if (!value) return null;
+  if (value.length <= 18) return value;
+  return `${value.slice(0, 10)}...${value.slice(-8)}`;
 }
 
 function detectorSummary(detector: DetectorResult): string {
@@ -68,6 +103,9 @@ export default function EnhancedInsights({ result }: EnhancedInsightsProps) {
   const detectors = result.detectors ?? [];
   const citations = result.citations ?? result.web_research?.citations ?? [];
   const confidence = typeof result.confidence === "number" ? Math.round(result.confidence * 100) : null;
+  const sourceMatch = sourceMatchFrom(result);
+  const fingerprint = fingerprintFrom(result);
+  const phash = fingerprint?.perceptual_hashes?.phash;
 
   return (
     <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -182,6 +220,41 @@ export default function EnhancedInsights({ result }: EnhancedInsightsProps) {
                 </div>
               )}
             </div>
+            {(sourceMatch || fingerprint) && (
+              <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                <div className="mb-3 flex items-center gap-2">
+                  <ScanSearch className="h-4 w-4 text-sky-200" />
+                  <h4 className="text-sm font-bold text-white">Attachment Match</h4>
+                </div>
+                {sourceMatch && (
+                  <div className={`rounded-lg border p-3 ${statusTone(sourceMatch.status ?? "not_checked")}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <span className="text-sm font-bold capitalize">{readableStatus(sourceMatch.status ?? "not checked")}</span>
+                      {typeof sourceMatch.confidence === "number" && (
+                        <span className="font-mono text-sm">{percent(sourceMatch.confidence)}</span>
+                      )}
+                    </div>
+                    {sourceMatch.explanation && <p className="mt-3 text-sm leading-6 opacity-80">{sourceMatch.explanation}</p>}
+                  </div>
+                )}
+                {fingerprint && (
+                  <div className="mt-3 grid gap-2 text-xs text-white/55 sm:grid-cols-2">
+                    {shortHash(fingerprint.sha256) && (
+                      <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                        <span className="font-bold uppercase text-white/35">SHA-256</span>
+                        <div className="mt-1 font-mono text-white/70">{shortHash(fingerprint.sha256)}</div>
+                      </div>
+                    )}
+                    {shortHash(phash) && (
+                      <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                        <span className="font-bold uppercase text-white/35">pHash</span>
+                        <div className="mt-1 font-mono text-white/70">{shortHash(phash)}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             <CitationList citations={citations} />
             <div className="flex items-start gap-2 rounded-lg border border-cyan-300/15 bg-cyan-300/10 p-3 text-sm leading-6 text-cyan-50/75">
               <BadgeCheck className="mt-1 h-4 w-4 shrink-0 text-cyan-200" />

@@ -7,6 +7,7 @@ from PIL import Image
 from analyzers.ai_detectors import completed_model_count, highest_synthetic_probability, run_image_detectors
 from analyzers.config import get_settings
 from analyzers.feedback import build_custom_feedback
+from analyzers.fingerprints import build_image_fingerprint
 from analyzers.provenance import verify_image_provenance
 from analyzers.scoring import clamp_score, get_risk_level, summarize_result, unique_messages
 from analyzers.web_research import research_image_context, research_text_claims, research_video_context
@@ -24,10 +25,14 @@ def enhance_image_result(
         return _with_local_mode(result)
 
     technical = result.get("technical_details", {})
+    attachment_fingerprint = build_image_fingerprint(image, content_bytes, filename) if content_bytes else None
+    if attachment_fingerprint:
+        technical["attachment_fingerprint"] = attachment_fingerprint
+        result["technical_details"] = technical
     metadata_present = bool(technical.get("metadata_fields_found"))
     detectors = run_image_detectors(image, filename, metadata_present, technical)
     provenance = verify_image_provenance(content_bytes, filename) if content_bytes else None
-    web_research = research_image_context(filename) if content_bytes else None
+    web_research = research_image_context(filename, attachment_fingerprint=attachment_fingerprint) if content_bytes else None
 
     evidence = dict(result.get("evidence", {}))
     detector_probability = highest_synthetic_probability(detectors)
@@ -67,6 +72,13 @@ def enhance_image_result(
         warnings.append("Automated indexed web research did not find corroborating source leads.")
     elif web_research and web_research["matches_found"] > 0:
         positives.append("Automated indexed web research found possible source or context leads.")
+    source_match = _source_match(web_research)
+    if source_match.get("status") == "exact_hash_match":
+        positives.append("An indexed result appears to match this file's exact fingerprint.")
+    elif source_match.get("status") == "possible_context_match":
+        positives.append("Indexed search found possible online context, but not a pixel-level match.")
+    elif source_match.get("status") == "not_found":
+        warnings.append("No indexed source match was found for this attachment from the available search cues.")
 
     final_score = clamp_score(recalibrated_score)
     risk_level, verdict = get_risk_level(final_score)
@@ -301,3 +313,11 @@ def _probability_label(probability: float | None) -> str | None:
     if probability <= 0.30:
         return "sampled_frames_lower_synthetic_signal"
     return "sampled_frames_uncertain"
+
+
+def _source_match(web_research: Dict[str, Any] | None) -> Dict[str, Any]:
+    details = (web_research or {}).get("details")
+    if not isinstance(details, dict):
+        return {}
+    source_match = details.get("source_match")
+    return source_match if isinstance(source_match, dict) else {}

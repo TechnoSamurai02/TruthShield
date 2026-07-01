@@ -17,10 +17,14 @@ BRAVE_WEB_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 BRAVE_IMAGE_ENDPOINT = "https://api.search.brave.com/res/v1/images/search"
 
 
-def research_image_context(filename: str, visible_text: str = "") -> Dict[str, Any]:
+def research_image_context(
+    filename: str,
+    visible_text: str = "",
+    attachment_fingerprint: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     settings = get_settings()
     queries = _image_queries(filename, visible_text, settings.web_research_per_scan_limit)
-    return _run_research(queries, settings, search_kind="image")
+    return _run_research(queries, settings, search_kind="image", attachment_fingerprint=attachment_fingerprint)
 
 
 def research_text_claims(text: str) -> Dict[str, Any]:
@@ -36,7 +40,12 @@ def research_video_context(filename: str, frame_notes: Iterable[str]) -> Dict[st
     return _run_research(queries, settings, search_kind="web")
 
 
-def _run_research(queries: List[str], settings: EnhancedSettings, search_kind: str) -> Dict[str, Any]:
+def _run_research(
+    queries: List[str],
+    settings: EnhancedSettings,
+    search_kind: str,
+    attachment_fingerprint: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     if not settings.brave_search_api_key:
         return {
             "status": "not_configured",
@@ -46,7 +55,12 @@ def _run_research(queries: List[str], settings: EnhancedSettings, search_kind: s
             "matches_found": 0,
             "summary": "Web research was skipped because BRAVE_SEARCH_API_KEY is not configured.",
             "citations": [],
-            "details": {"free_provider": True, "search_kind": search_kind},
+            "details": _research_details(
+                search_kind,
+                attachment_fingerprint,
+                source_match=_source_match("not_checked", "No search provider is configured for attachment matching."),
+                extra={"free_provider": True},
+            ),
         }
     if settings.web_research_per_scan_limit <= 0:
         return {
@@ -57,7 +71,11 @@ def _run_research(queries: List[str], settings: EnhancedSettings, search_kind: s
             "matches_found": 0,
             "summary": "Web research is disabled by the per-scan request limit.",
             "citations": [],
-            "details": {"search_kind": search_kind},
+            "details": _research_details(
+                search_kind,
+                attachment_fingerprint,
+                source_match=_source_match("not_checked", "The per-scan request limit disabled attachment matching."),
+            ),
         }
     if not queries:
         return {
@@ -68,7 +86,11 @@ def _run_research(queries: List[str], settings: EnhancedSettings, search_kind: s
             "matches_found": 0,
             "summary": "There was not enough searchable context to run automated web research.",
             "citations": [],
-            "details": {"search_kind": search_kind},
+            "details": _research_details(
+                search_kind,
+                attachment_fingerprint,
+                source_match=_source_match("not_checked", "There was not enough searchable text context to look for this attachment."),
+            ),
         }
 
     quota = _QuotaCounter(settings.monthly_counter_path, settings.web_research_monthly_limit)
@@ -86,7 +108,12 @@ def _run_research(queries: List[str], settings: EnhancedSettings, search_kind: s
                 "matches_found": len(citations),
                 "summary": "The free monthly web research limit has been reached.",
                 "citations": citations,
-                "details": {"monthly_limit": settings.web_research_monthly_limit, "errors": errors},
+                "details": _research_details(
+                    search_kind,
+                    attachment_fingerprint,
+                    source_match=_source_match("not_checked", "The monthly search quota was reached before attachment matching could finish."),
+                    extra={"monthly_limit": settings.web_research_monthly_limit, "errors": errors},
+                ),
             }
         quota.consume()
         consumed += 1
@@ -99,15 +126,22 @@ def _run_research(queries: List[str], settings: EnhancedSettings, search_kind: s
 
     citations = _dedupe_citations(citations)[:5]
     if citations:
+        source_match = _build_source_match(citations, attachment_fingerprint)
+        score = 82.0 if source_match["status"] == "exact_hash_match" else 68.0
         return {
             "status": "completed",
             "provider": "brave_search",
-            "score": 68.0,
+            "score": score,
             "queries": queries[:consumed],
             "matches_found": len(citations),
-            "summary": "Free indexed web/image search found possible context or source leads.",
+            "summary": _web_summary_for_match(source_match),
             "citations": citations,
-            "details": {"free_provider": True, "errors": errors, "search_kind": search_kind},
+            "details": _research_details(
+                search_kind,
+                attachment_fingerprint,
+                source_match=source_match,
+                extra={"free_provider": True, "errors": errors},
+            ),
         }
     if errors:
         return {
@@ -118,7 +152,12 @@ def _run_research(queries: List[str], settings: EnhancedSettings, search_kind: s
             "matches_found": 0,
             "summary": "Web research could not complete successfully.",
             "citations": [],
-            "details": {"errors": errors[:3], "search_kind": search_kind},
+            "details": _research_details(
+                search_kind,
+                attachment_fingerprint,
+                source_match=_source_match("not_checked", "Search errors prevented attachment matching from completing."),
+                extra={"errors": errors[:3]},
+            ),
         }
     return {
         "status": "no_results",
@@ -128,7 +167,14 @@ def _run_research(queries: List[str], settings: EnhancedSettings, search_kind: s
         "matches_found": 0,
         "summary": "No corroborating indexed web results were found from the generated search queries.",
         "citations": [],
-        "details": {"search_kind": search_kind},
+        "details": _research_details(
+            search_kind,
+            attachment_fingerprint,
+            source_match=_source_match(
+                "not_found",
+                "No indexed source leads were found from the generated queries. This is not proof the attachment is original or real.",
+            ),
+        ),
     }
 
 
@@ -232,6 +278,69 @@ def _dedupe_citations(citations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         seen.add(url)
         unique.append(citation)
     return unique
+
+
+def _research_details(
+    search_kind: str,
+    attachment_fingerprint: Dict[str, Any] | None,
+    source_match: Dict[str, Any],
+    extra: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    details: Dict[str, Any] = {"search_kind": search_kind, "source_match": source_match}
+    if attachment_fingerprint is not None:
+        details["attachment_fingerprint"] = attachment_fingerprint
+    if extra:
+        details.update(extra)
+    return details
+
+
+def _build_source_match(citations: List[Dict[str, Any]], attachment_fingerprint: Dict[str, Any] | None) -> Dict[str, Any]:
+    sha256 = str((attachment_fingerprint or {}).get("sha256") or "")
+    if sha256 and _citation_contains(citations, sha256):
+        return _source_match(
+            "exact_hash_match",
+            "An indexed result appears to contain the uploaded file's SHA-256 fingerprint. Treat this as a strong exact-file lead.",
+            confidence=0.95,
+            matched_citations=len(citations),
+        )
+    return _source_match(
+        "possible_context_match",
+        "Indexed search returned possible context or source leads from filename or text cues, but did not compare the uploaded pixels directly.",
+        confidence=0.35,
+        matched_citations=len(citations),
+    )
+
+
+def _source_match(
+    status: str,
+    explanation: str,
+    confidence: float = 0.0,
+    matched_citations: int = 0,
+) -> Dict[str, Any]:
+    return {
+        "status": status,
+        "confidence": round(max(0.0, min(1.0, confidence)), 2),
+        "matched_citations": matched_citations,
+        "explanation": explanation,
+    }
+
+
+def _web_summary_for_match(source_match: Dict[str, Any]) -> str:
+    if source_match.get("status") == "exact_hash_match":
+        return "Indexed search found a strong exact-file source lead based on the uploaded file fingerprint."
+    return "Free indexed web/image search found possible context or source leads."
+
+
+def _citation_contains(citations: List[Dict[str, Any]], needle: str) -> bool:
+    lowered_needle = needle.lower()
+    for citation in citations:
+        haystack = " ".join(
+            str(citation.get(field) or "")
+            for field in ("title", "url", "source", "snippet")
+        ).lower()
+        if lowered_needle in haystack:
+            return True
+    return False
 
 
 class _QuotaCounter:

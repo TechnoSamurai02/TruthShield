@@ -11,6 +11,8 @@ type Tab = "image" | "video" | "text";
 const scanMessages = [
   "Scanning for manipulation signals...",
   "Checking metadata...",
+  "Building attachment fingerprint...",
+  "Searching indexed source leads...",
   "Calculating risk score..."
 ];
 

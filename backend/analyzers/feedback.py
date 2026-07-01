@@ -41,6 +41,8 @@ def _deterministic_feedback(
     detector_note = _detector_note(detectors)
     provenance_note = provenance["summary"] if provenance else "No provenance check was available."
     web_note = web_research["summary"] if web_research else "No web research was available."
+    should_discuss_attachment_match = content_label != "text post"
+    source_match_note = _source_match_note(web_research) if should_discuss_attachment_match else ""
     if score < 40:
         headline = f"High-risk {content_label} signals found"
     elif score < 60:
@@ -54,7 +56,7 @@ def _deterministic_feedback(
     strongest_positive = positives[:2] or ["No strong positive authenticity signal was available."]
     explanation = (
         f"The score is based on detector signals, provenance checks, indexed web research, and local forensic checks. "
-        f"{detector_note} {provenance_note} {web_note}"
+        f"{detector_note} {provenance_note} {web_note} {source_match_note}"
     )
     next_steps = [
         "Open the cited sources or run a manual reverse image search if the claim matters.",
@@ -62,6 +64,8 @@ def _deterministic_feedback(
     ]
     if web_research and web_research.get("status") == "not_configured":
         next_steps.insert(0, "Add a free Brave Search API key to enable automated indexed web research.")
+    if should_discuss_attachment_match and _source_match_status(web_research) in {"not_checked", "possible_context_match"}:
+        next_steps.insert(0, "Use a reverse-image provider such as Google Lens, TinEye, or Bing Visual Search for pixel-level web matching.")
     return {
         "headline": headline,
         "explanation": explanation,
@@ -84,6 +88,27 @@ def _detector_note(detectors: List[Dict[str, Any]]) -> str:
     if probability >= 0.45:
         return f"The strongest AI detector signal is uncertain at about {probability:.0%} synthetic likelihood."
     return f"The strongest AI detector signal estimates about {probability:.0%} synthetic likelihood."
+
+
+def _source_match_note(web_research: Dict[str, Any] | None) -> str:
+    status = _source_match_status(web_research)
+    if status == "exact_hash_match":
+        return "The attachment search found a strong exact-file fingerprint lead."
+    if status == "possible_context_match":
+        return "The attachment search found possible context leads, but not a confirmed pixel-level match."
+    if status == "not_found":
+        return "The attachment search did not find an indexed source match from the available search cues."
+    return "No pixel-level reverse-image provider was available for this scan."
+
+
+def _source_match_status(web_research: Dict[str, Any] | None) -> str:
+    details = (web_research or {}).get("details")
+    if not isinstance(details, dict):
+        return ""
+    source_match = details.get("source_match")
+    if not isinstance(source_match, dict):
+        return ""
+    return str(source_match.get("status") or "")
 
 
 def _try_local_reasoning_feedback(base_feedback: Dict[str, Any], content_label: str) -> Dict[str, Any] | None:
