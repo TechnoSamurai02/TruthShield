@@ -1,4 +1,4 @@
-import { BadgeCheck, Bot, ExternalLink, FileSearch, Fingerprint, ScanSearch, Sparkles } from "lucide-react";
+import { BadgeCheck, Bot, ExternalLink, FileSearch, Fingerprint, Microscope, ScanSearch, Sparkles } from "lucide-react";
 import type { AnalysisResult, Citation, DetectorResult } from "../lib/types";
 
 interface EnhancedInsightsProps {
@@ -40,6 +40,23 @@ interface AttachmentFingerprint {
   perceptual_hashes?: Record<string, string>;
 }
 
+interface ForensicAnalysis {
+  score?: number;
+  synthetic_artifact_probability?: number;
+  manipulation_probability?: number;
+  caption_overlay?: {
+    is_likely?: boolean;
+    confidence?: number;
+    location?: string | null;
+    explanation?: string;
+  };
+  noise_residual?: Record<string, unknown>;
+  frequency_spectrum?: Record<string, unknown>;
+  jpeg_blockiness?: Record<string, unknown>;
+  error_level_analysis?: Record<string, unknown>;
+  duplicate_patch_analysis?: Record<string, unknown>;
+}
+
 function objectRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
@@ -57,10 +74,30 @@ function fingerprintFrom(result: AnalysisResult): AttachmentFingerprint | null {
   return fingerprint ? (fingerprint as AttachmentFingerprint) : null;
 }
 
+function forensicFrom(result: AnalysisResult): ForensicAnalysis | null {
+  const technical = objectRecord(result.technical_details);
+  const forensic = objectRecord(technical?.forensic_analysis);
+  return forensic ? (forensic as ForensicAnalysis) : null;
+}
+
 function shortHash(value?: string): string | null {
   if (!value) return null;
   if (value.length <= 18) return value;
   return `${value.slice(0, 10)}...${value.slice(-8)}`;
+}
+
+function detailText(record: Record<string, unknown> | undefined, key: string): string | null {
+  const value = record?.[key];
+  return typeof value === "string" && value ? value : null;
+}
+
+function metricRow(label: string, value: string, tone = "text-white") {
+  return (
+    <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+      <div className="text-xs font-bold uppercase text-white/35">{label}</div>
+      <div className={`mt-1 font-mono text-sm ${tone}`}>{value}</div>
+    </div>
+  );
 }
 
 function detectorSummary(detector: DetectorResult): string {
@@ -105,7 +142,9 @@ export default function EnhancedInsights({ result }: EnhancedInsightsProps) {
   const confidence = typeof result.confidence === "number" ? Math.round(result.confidence * 100) : null;
   const sourceMatch = sourceMatchFrom(result);
   const fingerprint = fingerprintFrom(result);
+  const forensic = forensicFrom(result);
   const phash = fingerprint?.perceptual_hashes?.phash;
+  const captionLikely = forensic?.caption_overlay?.is_likely;
 
   return (
     <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -134,6 +173,46 @@ export default function EnhancedInsights({ result }: EnhancedInsightsProps) {
                 ))}
               </ul>
             </div>
+          </div>
+        </section>
+      )}
+
+      {forensic && (
+        <section className="panel">
+          <div className="mb-4 flex items-center gap-2">
+            <Microscope className="h-5 w-5 text-cyan-200" />
+            <h3 className="text-base font-bold text-white">Pixel Forensics</h3>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {metricRow("Forensic Score", score(forensic.score))}
+            {metricRow("AI Artifacts", percent(forensic.synthetic_artifact_probability), "text-cyan-50")}
+            {metricRow("Edit Signals", percent(forensic.manipulation_probability), "text-yellow-100")}
+          </div>
+          {captionLikely && (
+            <div className="mt-3 rounded-lg border border-yellow-300/25 bg-yellow-300/10 p-3 text-sm leading-6 text-yellow-50">
+              Caption or graphic overlay detected
+              {typeof forensic.caption_overlay?.confidence === "number" && ` (${percent(forensic.caption_overlay.confidence)} confidence)`}
+              {forensic.caption_overlay?.location && ` near the ${forensic.caption_overlay.location}`}.
+            </div>
+          )}
+          <div className="mt-3 grid gap-2 text-sm leading-6 text-white/65">
+            {detailText(forensic.noise_residual, "interpretation") && (
+              <div className="rounded-lg border border-white/10 bg-white/5 p-3">{detailText(forensic.noise_residual, "interpretation")}</div>
+            )}
+            {detailText(forensic.frequency_spectrum, "interpretation") && (
+              <div className="rounded-lg border border-white/10 bg-white/5 p-3">{detailText(forensic.frequency_spectrum, "interpretation")}</div>
+            )}
+            {detailText(forensic.jpeg_blockiness, "interpretation") && (
+              <div className="rounded-lg border border-white/10 bg-white/5 p-3">{detailText(forensic.jpeg_blockiness, "interpretation")}</div>
+            )}
+            {detailText(forensic.error_level_analysis, "interpretation") && (
+              <div className="rounded-lg border border-white/10 bg-white/5 p-3">{detailText(forensic.error_level_analysis, "interpretation")}</div>
+            )}
+            {detailText(forensic.duplicate_patch_analysis, "interpretation") && (
+              <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                {detailText(forensic.duplicate_patch_analysis, "interpretation")}
+              </div>
+            )}
           </div>
         </section>
       )}

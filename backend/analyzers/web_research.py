@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import re
 import time
@@ -15,15 +16,32 @@ from analyzers.config import EnhancedSettings, get_settings
 
 BRAVE_WEB_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 BRAVE_IMAGE_ENDPOINT = "https://api.search.brave.com/res/v1/images/search"
+GOOGLE_VISION_ENDPOINT = "https://vision.googleapis.com/v1/images:annotate"
 
 
 def research_image_context(
     filename: str,
     visible_text: str = "",
     attachment_fingerprint: Dict[str, Any] | None = None,
+    content_bytes: bytes | None = None,
 ) -> Dict[str, Any]:
     settings = get_settings()
     queries = _image_queries(filename, visible_text, settings.web_research_per_scan_limit)
+    if content_bytes and settings.google_vision_api_key:
+        google_result = _run_google_vision_web_detection(content_bytes, settings, attachment_fingerprint)
+        if google_result["status"] != "no_results" or not settings.brave_search_api_key:
+            return google_result
+        brave_result = _run_research(queries, settings, search_kind="image", attachment_fingerprint=attachment_fingerprint)
+        brave_details = brave_result.setdefault("details", {})
+        if isinstance(brave_details, dict):
+            brave_details["uploaded_image_search"] = google_result["details"]
+        if brave_result["matches_found"] > 0:
+            brave_result["summary"] = (
+                "Uploaded-image search found no full/partial visual matches, but indexed image search found context leads."
+            )
+        return brave_result
+    if content_bytes and not settings.google_vision_api_key and not settings.brave_search_api_key:
+        return _image_research_not_configured(queries, attachment_fingerprint)
     return _run_research(queries, settings, search_kind="image", attachment_fingerprint=attachment_fingerprint)
 
 
@@ -38,6 +56,187 @@ def research_video_context(filename: str, frame_notes: Iterable[str]) -> Dict[st
     joined_notes = " ".join(note for note in frame_notes if note)
     queries = _image_queries(filename, joined_notes, settings.web_research_per_scan_limit)
     return _run_research(queries, settings, search_kind="web")
+
+
+def _image_research_not_configured(
+    queries: List[str],
+    attachment_fingerprint: Dict[str, Any] | None,
+) -> Dict[str, Any]:
+    return {
+        "status": "not_configured",
+        "provider": "google_vision_web_detection+brave_search",
+        "score": 50.0,
+        "queries": queries,
+        "matches_found": 0,
+        "summary": "Uploaded-image web matching was skipped because GOOGLE_VISION_API_KEY and BRAVE_SEARCH_API_KEY are not configured.",
+        "citations": [],
+        "details": _research_details(
+            "image",
+            attachment_fingerprint,
+            source_match=_source_match(
+                "not_checked",
+                "No uploaded-image matching or indexed image-search provider is configured.",
+            ),
+            extra={"free_provider": False, "uploaded_image_matching": "not_configured"},
+        ),
+    }
+
+
+def _run_google_vision_web_detection(
+    content_bytes: bytes,
+    settings: EnhancedSettings,
+    attachment_fingerprint: Dict[str, Any] | None,
+) -> Dict[str, Any]:
+    response = _google_vision_post(settings.google_vision_api_key or "", content_bytes, settings.google_vision_max_results)
+    if response["status"] != "ok":
+        return {
+            "status": "error",
+            "provider": "google_vision_web_detection",
+            "score": 50.0,
+            "queries": ["uploaded image web detection"],
+            "matches_found": 0,
+            "summary": "Uploaded-image web matching could not complete successfully.",
+            "citations": [],
+            "details": _research_details(
+                "image",
+                attachment_fingerprint,
+                source_match=_source_match("not_checked", "Google Vision Web Detection returned an error."),
+                extra={"errors": [response["error"]], "requires_api_key": True},
+            ),
+        }
+
+    parsed = _parse_google_web_detection(response["data"])
+    source_match = parsed["source_match"]
+    citations = parsed["citations"]
+    status = "completed" if citations else "no_results"
+    score = _google_source_score(source_match["status"])
+    return {
+        "status": status,
+        "provider": "google_vision_web_detection",
+        "score": score,
+        "queries": ["uploaded image web detection"],
+        "matches_found": len(citations),
+        "summary": _google_web_summary(source_match),
+        "citations": citations[:8],
+        "details": _research_details(
+            "image",
+            attachment_fingerprint,
+            source_match=source_match,
+            extra={
+                "uploaded_image_matching": "checked",
+                "best_guess_labels": parsed["best_guess_labels"],
+                "web_entities": parsed["web_entities"],
+                "match_counts": parsed["match_counts"],
+                "requires_api_key": True,
+            },
+        ),
+    }
+
+
+def _google_vision_post(api_key: str, content_bytes: bytes, max_results: int) -> Dict[str, Any]:
+    encoded = base64.b64encode(content_bytes).decode("ascii")
+    payload = {
+        "requests": [
+            {
+                "image": {"content": encoded},
+                "features": [{"type": "WEB_DETECTION", "maxResults": max_results}],
+            }
+        ]
+    }
+    request = urllib.request.Request(
+        f"{GOOGLE_VISION_ENDPOINT}?key={urllib.parse.quote(api_key)}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "User-Agent": "TruthShieldAI/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=12) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            return {"status": "ok", "data": json.loads(raw)}
+    except urllib.error.HTTPError as exc:
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+            parsed = json.loads(body)
+            message = parsed.get("error", {}).get("message") or body
+        except Exception:
+            message = f"HTTP {exc.code}"
+        return {"status": "error", "error": f"Google Vision returned HTTP {exc.code}: {str(message)[:180]}"}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)[:220]}
+
+
+def _parse_google_web_detection(data: Dict[str, Any]) -> Dict[str, Any]:
+    response = ((data.get("responses") or [{}])[0]) if isinstance(data.get("responses"), list) else {}
+    web = response.get("webDetection") if isinstance(response, dict) else {}
+    web = web if isinstance(web, dict) else {}
+
+    full_images = _google_image_urls(web.get("fullMatchingImages"))
+    partial_images = _google_image_urls(web.get("partialMatchingImages"))
+    similar_images = _google_image_urls(web.get("visuallySimilarImages"))
+    pages = web.get("pagesWithMatchingImages") or []
+    pages = pages if isinstance(pages, list) else []
+
+    page_citations: List[Dict[str, Any]] = []
+    full_page_count = 0
+    partial_page_count = 0
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        url = str(page.get("url") or "")
+        if not url:
+            continue
+        full_page_matches = _google_image_urls(page.get("fullMatchingImages"))
+        partial_page_matches = _google_image_urls(page.get("partialMatchingImages"))
+        full_page_count += len(full_page_matches)
+        partial_page_count += len(partial_page_matches)
+        page_citations.append(
+            {
+                "title": _clean_text(str(page.get("pageTitle") or "Page with matching image"))[:140],
+                "url": url,
+                "source": _domain(url),
+                "snippet": _google_page_snippet(full_page_matches, partial_page_matches),
+            }
+        )
+
+    citations = [
+        *_direct_image_citations(full_images, "Full matching image"),
+        *_direct_image_citations(partial_images, "Partial matching image"),
+        *page_citations,
+        *_direct_image_citations(similar_images[:3], "Visually similar image"),
+    ]
+    citations = _dedupe_citations(citations)
+    best_guess_labels = [
+        str(item.get("label"))
+        for item in (web.get("bestGuessLabels") or [])
+        if isinstance(item, dict) and item.get("label")
+    ][:5]
+    web_entities = [
+        {
+            "description": str(item.get("description") or ""),
+            "score": float(item.get("score") or 0.0),
+        }
+        for item in (web.get("webEntities") or [])
+        if isinstance(item, dict) and item.get("description")
+    ][:8]
+    match_counts = {
+        "full_matching_images": len(full_images),
+        "partial_matching_images": len(partial_images),
+        "pages_with_matching_images": len(page_citations),
+        "page_full_matching_images": full_page_count,
+        "page_partial_matching_images": partial_page_count,
+        "visually_similar_images": len(similar_images),
+    }
+    source_match = _google_source_match(match_counts)
+    return {
+        "citations": citations,
+        "source_match": source_match,
+        "best_guess_labels": best_guess_labels,
+        "web_entities": web_entities,
+        "match_counts": match_counts,
+    }
 
 
 def _run_research(
@@ -198,6 +397,93 @@ def _brave_get(endpoint: str, api_key: str, query: str) -> Dict[str, Any]:
         return {"status": "error", "error": str(exc)[:220]}
 
 
+def _google_image_urls(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    urls = []
+    for item in value:
+        if isinstance(item, dict) and item.get("url"):
+            urls.append(str(item["url"]))
+    return urls
+
+
+def _direct_image_citations(urls: List[str], title: str) -> List[Dict[str, Any]]:
+    citations = []
+    for url in urls:
+        citations.append(
+            {
+                "title": title,
+                "url": url,
+                "source": _domain(url),
+                "snippet": None,
+            }
+        )
+    return citations
+
+
+def _google_page_snippet(full_matches: List[str], partial_matches: List[str]) -> str | None:
+    if full_matches:
+        return "Google Vision reported this page with a full matching image."
+    if partial_matches:
+        return "Google Vision reported this page with a partial matching image."
+    return "Google Vision reported this page as related to the uploaded image."
+
+
+def _google_source_match(match_counts: Dict[str, int]) -> Dict[str, Any]:
+    full_count = match_counts.get("full_matching_images", 0) + match_counts.get("page_full_matching_images", 0)
+    partial_count = match_counts.get("partial_matching_images", 0) + match_counts.get("page_partial_matching_images", 0)
+    page_count = match_counts.get("pages_with_matching_images", 0)
+    similar_count = match_counts.get("visually_similar_images", 0)
+    if full_count > 0:
+        return _source_match(
+            "exact_visual_match",
+            "Uploaded-image search found full visual matches for this image online.",
+            confidence=0.9,
+            matched_citations=full_count + page_count,
+        )
+    if partial_count > 0 or page_count > 0:
+        return _source_match(
+            "partial_visual_match",
+            "Uploaded-image search found partial matches or pages containing related versions of this image.",
+            confidence=0.72,
+            matched_citations=partial_count + page_count,
+        )
+    if similar_count > 0:
+        return _source_match(
+            "visually_similar_match",
+            "Uploaded-image search found visually similar images, but not a confirmed copy of the same image.",
+            confidence=0.42,
+            matched_citations=similar_count,
+        )
+    return _source_match(
+        "not_found",
+        "Uploaded-image search did not find full, partial, or visually similar indexed matches.",
+    )
+
+
+def _google_source_score(status: str) -> float:
+    if status == "exact_visual_match":
+        return 88.0
+    if status == "partial_visual_match":
+        return 78.0
+    if status == "visually_similar_match":
+        return 62.0
+    if status == "not_found":
+        return 40.0
+    return 50.0
+
+
+def _google_web_summary(source_match: Dict[str, Any]) -> str:
+    status = source_match.get("status")
+    if status == "exact_visual_match":
+        return "Uploaded-image web detection found full visual matches online."
+    if status == "partial_visual_match":
+        return "Uploaded-image web detection found partial matches or related pages online."
+    if status == "visually_similar_match":
+        return "Uploaded-image web detection found visually similar images, but no confirmed copy."
+    return "Uploaded-image web detection did not find indexed visual matches."
+
+
 def _extract_citations(data: Dict[str, Any], search_kind: str) -> List[Dict[str, Any]]:
     if search_kind == "image":
         results = data.get("results") or []
@@ -328,6 +614,12 @@ def _source_match(
 def _web_summary_for_match(source_match: Dict[str, Any]) -> str:
     if source_match.get("status") == "exact_hash_match":
         return "Indexed search found a strong exact-file source lead based on the uploaded file fingerprint."
+    if source_match.get("status") == "exact_visual_match":
+        return "Uploaded-image search found full visual matches online."
+    if source_match.get("status") == "partial_visual_match":
+        return "Uploaded-image search found partial visual matches or related pages online."
+    if source_match.get("status") == "visually_similar_match":
+        return "Uploaded-image search found visually similar images online."
     return "Free indexed web/image search found possible context or source leads."
 
 

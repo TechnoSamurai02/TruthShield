@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import io
 import os
 import unittest
 from unittest.mock import patch
 
+import cv2
 import numpy as np
 from PIL import Image
 
 from analyzers.enhanced import enhance_image_result, enhance_video_result
+from analyzers.image_forensics import analyze_image_forensics
 from analyzers.image_analyzer import analyze_frame_array, analyze_image_bytes
 from analyzers.provenance import verify_image_provenance
 from analyzers.text_analyzer import analyze_text
-from analyzers.web_research import research_text_claims
+from analyzers.web_research import research_image_context, research_text_claims
 from models.schemas import AnalysisResponse, VideoAnalysisResponse
 
 
@@ -89,6 +92,56 @@ class EnhancedAnalysisTests(unittest.TestCase):
         self.assertEqual(result["score"], 50.0)
         self.assertEqual(result["details"]["source_match"]["status"], "not_checked")
 
+    def test_caption_overlay_is_not_treated_as_strong_ai_signal(self) -> None:
+        rng = np.random.default_rng(7)
+        base = np.zeros((420, 640, 3), dtype=np.uint8)
+        base[:, :, 0] = np.linspace(120, 185, 640, dtype=np.uint8)
+        base[:, :, 1] = np.linspace(135, 205, 420, dtype=np.uint8)[:, None]
+        base[:, :, 2] = 150
+        noise = rng.normal(0, 7, base.shape).astype(np.int16)
+        base = np.clip(base.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+        cv2.putText(base, "YES", (250, 115), cv2.FONT_HERSHEY_SIMPLEX, 2.6, (0, 0, 0), 9, cv2.LINE_AA)
+        cv2.putText(base, "YES", (250, 115), cv2.FONT_HERSHEY_SIMPLEX, 2.6, (255, 255, 255), 4, cv2.LINE_AA)
+        image = Image.fromarray(base, "RGB")
+
+        forensics = analyze_image_forensics(image, filename="captioned-real-photo.jpg")
+
+        self.assertTrue(forensics["caption_overlay"]["is_likely"])
+        self.assertLess(forensics["synthetic_artifact_probability"], 0.50)
+
+    def test_google_vision_web_detection_exact_match(self) -> None:
+        google_payload = {
+            "responses": [
+                {
+                    "webDetection": {
+                        "fullMatchingImages": [{"url": "https://example.com/success-kid.jpg"}],
+                        "pagesWithMatchingImages": [
+                            {
+                                "url": "https://example.com/original",
+                                "pageTitle": "Original photo source",
+                                "fullMatchingImages": [{"url": "https://example.com/success-kid.jpg"}],
+                            }
+                        ],
+                        "bestGuessLabels": [{"label": "success kid"}],
+                        "webEntities": [{"description": "Success Kid", "score": 0.92}],
+                    }
+                }
+            ]
+        }
+        with patch.dict(os.environ, {"GOOGLE_VISION_API_KEY": "test-key", "BRAVE_SEARCH_API_KEY": ""}, clear=False), patch(
+            "analyzers.web_research._google_vision_post",
+            return_value={"status": "ok", "data": google_payload},
+        ):
+            result = research_image_context(
+                "success-kid.jpg",
+                attachment_fingerprint={"sha256": "abc"},
+                content_bytes=b"image-bytes",
+            )
+
+        self.assertEqual(result["provider"], "google_vision_web_detection")
+        self.assertEqual(result["details"]["source_match"]["status"], "exact_visual_match")
+        self.assertGreater(result["matches_found"], 0)
+
     def test_provenance_fallback_when_tools_absent(self) -> None:
         with patch("analyzers.provenance._try_c2pa_python", return_value=None), patch(
             "analyzers.provenance.shutil.which", return_value=None
@@ -98,9 +151,12 @@ class EnhancedAnalysisTests(unittest.TestCase):
         self.assertLess(result["score"], 50)
 
     def test_image_and_text_schema_compatibility(self) -> None:
-        with patch.dict(os.environ, {"ENABLE_LOCAL_AI_MODELS": "false", "BRAVE_SEARCH_API_KEY": ""}, clear=False):
+        with patch.dict(
+            os.environ,
+            {"ENABLE_LOCAL_AI_MODELS": "false", "BRAVE_SEARCH_API_KEY": "", "GOOGLE_VISION_API_KEY": ""},
+            clear=False,
+        ):
             image = Image.new("RGB", (512, 512), color=(120, 80, 160))
-            import io
 
             buffer = io.BytesIO()
             image.save(buffer, format="PNG")
@@ -117,7 +173,11 @@ class EnhancedAnalysisTests(unittest.TestCase):
         self.assertEqual(image_result["web_research"]["details"]["source_match"]["status"], "not_checked")
 
     def test_video_frame_and_video_schema_compatibility(self) -> None:
-        with patch.dict(os.environ, {"ENABLE_LOCAL_AI_MODELS": "false", "BRAVE_SEARCH_API_KEY": ""}, clear=False):
+        with patch.dict(
+            os.environ,
+            {"ENABLE_LOCAL_AI_MODELS": "false", "BRAVE_SEARCH_API_KEY": "", "GOOGLE_VISION_API_KEY": ""},
+            clear=False,
+        ):
             frame = np.zeros((480, 640, 3), dtype=np.uint8)
             frame_result = analyze_frame_array(frame, "unit-test-frame")
             video_result = {

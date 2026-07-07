@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 from PIL import Image
 
-from analyzers.ai_detectors import completed_model_count, highest_synthetic_probability, run_image_detectors
+from analyzers.ai_detectors import combined_synthetic_probability, completed_model_count, run_image_detectors
 from analyzers.config import get_settings
 from analyzers.feedback import build_custom_feedback
 from analyzers.fingerprints import build_image_fingerprint
@@ -32,10 +32,14 @@ def enhance_image_result(
     metadata_present = bool(technical.get("metadata_fields_found"))
     detectors = run_image_detectors(image, filename, metadata_present, technical)
     provenance = verify_image_provenance(content_bytes, filename) if content_bytes else None
-    web_research = research_image_context(filename, attachment_fingerprint=attachment_fingerprint) if content_bytes else None
+    web_research = (
+        research_image_context(filename, attachment_fingerprint=attachment_fingerprint, content_bytes=content_bytes)
+        if content_bytes
+        else None
+    )
 
     evidence = dict(result.get("evidence", {}))
-    detector_probability = highest_synthetic_probability(detectors)
+    detector_probability = combined_synthetic_probability(detectors)
     detector_truth = 50.0 if detector_probability is None else 100.0 - detector_probability * 100.0
     provenance_score = float(provenance["score"]) if provenance else 50.0
     web_score = float(web_research["score"]) if web_research else 50.0
@@ -44,16 +48,18 @@ def enhance_image_result(
             "metadata": evidence.get("metadata_score", 50.0),
             "visual": evidence.get("visual_consistency_score", result.get("truth_score", 50.0)),
             "compression": evidence.get("compression_score", 50.0),
+            "forensic": evidence.get("pixel_forensic_score", 50.0),
             "detector": detector_truth,
             "provenance": provenance_score,
             "web": web_score,
         },
         {
-            "metadata": 0.08,
-            "visual": 0.12,
-            "compression": 0.08,
-            "detector": 0.42,
-            "provenance": 0.15,
+            "metadata": 0.06,
+            "visual": 0.08,
+            "compression": 0.05,
+            "forensic": 0.20,
+            "detector": 0.36,
+            "provenance": 0.10,
             "web": 0.15,
         },
     )
@@ -75,6 +81,12 @@ def enhance_image_result(
     source_match = _source_match(web_research)
     if source_match.get("status") == "exact_hash_match":
         positives.append("An indexed result appears to match this file's exact fingerprint.")
+    elif source_match.get("status") == "exact_visual_match":
+        positives.append("Uploaded-image web detection found full visual matches online.")
+    elif source_match.get("status") == "partial_visual_match":
+        positives.append("Uploaded-image web detection found partial matches or related pages online.")
+    elif source_match.get("status") == "visually_similar_match":
+        positives.append("Uploaded-image web detection found visually similar images online.")
     elif source_match.get("status") == "possible_context_match":
         positives.append("Indexed search found possible online context, but not a pixel-level match.")
     elif source_match.get("status") == "not_found":
@@ -176,7 +188,7 @@ def enhance_video_result(result: Dict[str, Any], frame_results: List[Dict[str, A
         return _with_local_mode(result)
 
     frame_probabilities = [
-        highest_synthetic_probability(frame.get("detectors", []))
+        combined_synthetic_probability(frame.get("detectors", []))
         for frame in frame_results
         if frame.get("detectors")
     ]

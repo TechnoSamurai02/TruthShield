@@ -8,8 +8,31 @@ from PIL import Image
 from analyzers.config import get_settings
 
 
-SYNTHETIC_LABEL_MARKERS = ("fake", "ai", "generated", "synthetic", "deepfake", "sdxl", "diffusion")
-REAL_LABEL_MARKERS = ("real", "authentic", "natural", "camera", "human")
+SYNTHETIC_LABEL_MARKERS = (
+    "fake",
+    "ai generated",
+    "ai-generated",
+    "generated",
+    "synthetic",
+    "artificial",
+    "deepfake",
+    "sdxl",
+    "diffusion",
+)
+REAL_LABEL_MARKERS = (
+    "real",
+    "authentic",
+    "natural",
+    "camera",
+    "human",
+    "not ai",
+    "not_ai",
+    "non ai",
+    "non-ai",
+    "non_ai",
+    "human made",
+    "photograph",
+)
 FILENAME_SYNTHETIC_MARKERS = ("chatgpt", "dall", "dalle", "midjourney", "stable-diffusion", "sdxl", "generated", "ai")
 
 
@@ -56,6 +79,30 @@ def highest_synthetic_probability(detectors: List[Dict[str, Any]]) -> float | No
     return max(0.0, min(1.0, max(probabilities)))
 
 
+def combined_synthetic_probability(detectors: List[Dict[str, Any]]) -> float | None:
+    weighted_probabilities = []
+    for detector in detectors:
+        probability = detector.get("synthetic_probability")
+        if not isinstance(probability, (int, float)):
+            continue
+        weight = 0.65 if detector.get("name") == "local_heuristic_synthetic_likelihood" else 1.0
+        weighted_probabilities.append((float(probability), weight))
+    if not weighted_probabilities:
+        return None
+    if len(weighted_probabilities) == 1:
+        return max(0.0, min(1.0, weighted_probabilities[0][0]))
+
+    weighted_average = sum(probability * weight for probability, weight in weighted_probabilities) / sum(
+        weight for _, weight in weighted_probabilities
+    )
+    peak = max(probability for probability, _ in weighted_probabilities)
+    if peak >= 0.85 and weighted_average >= 0.55:
+        combined = peak * 0.55 + weighted_average * 0.45
+    else:
+        combined = peak * 0.25 + weighted_average * 0.75
+    return max(0.0, min(1.0, combined))
+
+
 def completed_model_count(detectors: List[Dict[str, Any]]) -> int:
     return sum(
         1
@@ -65,18 +112,28 @@ def completed_model_count(detectors: List[Dict[str, Any]]) -> int:
 
 
 def _heuristic_synthetic_detector(filename: str, metadata_present: bool, technical_details: Dict[str, Any]) -> Dict[str, Any]:
-    probability = 0.18
+    probability = 0.14
     reasons: List[str] = []
     lowered_filename = filename.lower()
+    forensic = technical_details.get("forensic_analysis")
+    forensic = forensic if isinstance(forensic, dict) else {}
+    caption_overlay = forensic.get("caption_overlay")
+    caption_like = isinstance(caption_overlay, dict) and bool(caption_overlay.get("is_likely"))
+    forensic_synthetic = _float_from(forensic, "synthetic_artifact_probability")
+    forensic_manipulation = _float_from(forensic, "manipulation_probability")
+
     if any(marker in lowered_filename for marker in FILENAME_SYNTHETIC_MARKERS):
         probability += 0.40
         reasons.append("The filename contains wording commonly used by AI generation tools.")
     if not metadata_present:
-        probability += 0.12
-        reasons.append("No readable camera metadata was found.")
+        probability += 0.05 if caption_like else 0.10
+        if caption_like:
+            reasons.append("No readable camera metadata was found, but the detected caption/edit can explain stripped metadata.")
+        else:
+            reasons.append("No readable camera metadata was found.")
     detected_format = str(technical_details.get("detected_format") or "").upper()
     if detected_format in {"PNG", "WEBP"} and not metadata_present:
-        probability += 0.08
+        probability += 0.03 if caption_like else 0.08
         reasons.append("The file format and metadata pattern are common for generated or exported images.")
     entropy = _float_detail(technical_details, "entropy")
     if entropy is not None and (entropy < 3.5 or entropy > 7.8):
@@ -88,8 +145,24 @@ def _heuristic_synthetic_detector(filename: str, metadata_present: bool, technic
         reasons.append("The image has possible over-smoothing or heavy blur.")
     compression = technical_details.get("compression_consistency")
     if isinstance(compression, dict) and compression.get("is_inconsistent"):
-        probability += 0.08
-        reasons.append("Compression or texture consistency is uneven.")
+        probability += 0.02 if caption_like else 0.08
+        if caption_like:
+            reasons.append("Compression consistency is uneven, but an added caption or graphic overlay can cause this.")
+        else:
+            reasons.append("Compression or texture consistency is uneven.")
+    if forensic_synthetic is not None:
+        if forensic_synthetic >= 0.60:
+            probability += min(0.26, (forensic_synthetic - 0.50) * 0.70)
+            reasons.append("Pixel-level forensic checks found synthetic-image artifact signals.")
+        elif forensic_synthetic <= 0.28:
+            probability -= 0.07
+            reasons.append("Pixel-level forensic checks did not find strong AI-generation artifacts.")
+    if forensic_manipulation is not None and forensic_manipulation >= 0.58 and not caption_like:
+        probability += 0.06
+        reasons.append("Pixel-level forensic checks found possible editing or compositing artifacts.")
+    if caption_like:
+        probability -= 0.04
+        reasons.append("A caption or graphic overlay was detected, which is an edit/context clue rather than direct AI-generation evidence.")
     if not reasons:
         reasons.append("No strong local synthetic markers were found.")
 
@@ -177,12 +250,12 @@ def _synthetic_probability(outputs: List[Dict[str, Any]]) -> float:
     real = 0.0
     unknown = 0.0
     for item in outputs:
-        label = item["label"].lower()
+        label = _normalized_label(item["label"])
         score = float(item["score"])
-        if any(marker in label for marker in SYNTHETIC_LABEL_MARKERS):
-            synthetic += score
-        elif any(marker in label for marker in REAL_LABEL_MARKERS):
+        if any(marker in label for marker in REAL_LABEL_MARKERS):
             real += score
+        elif any(marker in label for marker in SYNTHETIC_LABEL_MARKERS):
+            synthetic += score
         else:
             unknown += score
     if synthetic == 0.0 and real == 0.0:
@@ -195,3 +268,21 @@ def _float_detail(details: Dict[str, Any], key: str) -> float | None:
     if isinstance(value, (int, float)):
         return float(value)
     return None
+
+
+def _float_from(details: Dict[str, Any], key: str) -> float | None:
+    value = details.get(key)
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _normalized_label(label: str) -> str:
+    return (
+        str(label)
+        .lower()
+        .replace("_", " ")
+        .replace("-", " ")
+        .replace("/", " ")
+        .replace(".", " ")
+    )

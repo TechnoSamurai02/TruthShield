@@ -64,7 +64,11 @@ def _deterministic_feedback(
     ]
     if web_research and web_research.get("status") == "not_configured":
         next_steps.insert(0, "Add a free Brave Search API key to enable automated indexed web research.")
-    if should_discuss_attachment_match and _source_match_status(web_research) in {"not_checked", "possible_context_match"}:
+    if should_discuss_attachment_match and _source_match_status(web_research) in {
+        "not_checked",
+        "possible_context_match",
+        "visually_similar_match",
+    }:
         next_steps.insert(0, "Use a reverse-image provider such as Google Lens, TinEye, or Bing Visual Search for pixel-level web matching.")
     return {
         "headline": headline,
@@ -94,6 +98,12 @@ def _source_match_note(web_research: Dict[str, Any] | None) -> str:
     status = _source_match_status(web_research)
     if status == "exact_hash_match":
         return "The attachment search found a strong exact-file fingerprint lead."
+    if status == "exact_visual_match":
+        return "The uploaded-image search found full visual matches online."
+    if status == "partial_visual_match":
+        return "The uploaded-image search found partial matches or pages containing related versions online."
+    if status == "visually_similar_match":
+        return "The uploaded-image search found visually similar images, but not a confirmed copy."
     if status == "possible_context_match":
         return "The attachment search found possible context leads, but not a confirmed pixel-level match."
     if status == "not_found":

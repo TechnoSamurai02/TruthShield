@@ -37,6 +37,8 @@ class EnhancedSettings:
     enable_local_ai_models: bool
     local_reasoning_base_url: str | None
     ai_image_detector_models: list[str]
+    google_vision_api_key: str | None
+    google_vision_max_results: int
     monthly_counter_path: Path
 
 
@@ -50,8 +52,10 @@ def get_settings() -> EnhancedSettings:
         local_reasoning_base_url=(os.getenv("LOCAL_REASONING_BASE_URL") or "").rstrip("/") or None,
         ai_image_detector_models=_env_list(
             "AI_IMAGE_DETECTOR_MODELS",
-            "dima806/deepfake_vs_real_image_detection",
+            "Organika/sdxl-detector,dima806/deepfake_vs_real_image_detection",
         ),
+        google_vision_api_key=os.getenv("GOOGLE_VISION_API_KEY") or os.getenv("GOOGLE_CLOUD_VISION_API_KEY") or None,
+        google_vision_max_results=_env_int("GOOGLE_VISION_MAX_RESULTS", 10, minimum=1),
         monthly_counter_path=Path(
             os.getenv(
                 "WEB_RESEARCH_COUNTER_PATH",

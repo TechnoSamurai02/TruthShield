@@ -20,7 +20,7 @@ The app is intentionally honest: it does not claim to prove that something is fa
 - Text/post analysis with demo examples for judges
 - Truth Score, risk level, verdict, summary, and recommendations
 - Evidence breakdown for metadata, visual consistency, compression, language risk, and claim risk
-- Free enhanced verification with local synthetic-image signals, optional C2PA provenance checks, optional free-capped Brave Search research, citations, and custom feedback
+- Free enhanced verification with local pixel forensics, local synthetic-image signals, optional C2PA provenance checks, optional uploaded-image web matching, optional free-capped Brave Search research, citations, and custom feedback
 - Image attachment fingerprinting with SHA-256, average hash, difference hash, and pHash evidence
 - Attachment source-match reporting that separates exact fingerprint leads from weaker indexed context leads
 - AI apocalypse command-center UI
@@ -82,18 +82,22 @@ ENABLE_ENHANCED_ANALYSIS=true
 BRAVE_SEARCH_API_KEY=
 WEB_RESEARCH_PER_SCAN_LIMIT=2
 WEB_RESEARCH_MONTHLY_LIMIT=150
+GOOGLE_VISION_API_KEY=
+GOOGLE_VISION_MAX_RESULTS=10
 ENABLE_LOCAL_AI_MODELS=true
-AI_IMAGE_DETECTOR_MODELS=dima806/deepfake_vs_real_image_detection
+AI_IMAGE_DETECTOR_MODELS=Organika/sdxl-detector,dima806/deepfake_vs_real_image_detection
 LOCAL_REASONING_BASE_URL=
 ```
 
 Notes:
 
-- `BRAVE_SEARCH_API_KEY` is optional. When present, TruthShield uses free-capped Brave Web/Image Search requests for source leads and citations. When absent or quota-limited, analysis stays local.
-- Local Hugging Face detectors are optional and free, but require `transformers` and `torch` in the backend environment and may download model files. If they are unavailable, TruthShield uses a deterministic synthetic-likelihood fallback.
+- `GOOGLE_VISION_API_KEY` is optional. When present, TruthShield sends the uploaded image to Google Cloud Vision Web Detection to look for full visual matches, partial matches, visually similar images, and pages containing the image. This is the closest automated reverse-image-search path in the app.
+- `BRAVE_SEARCH_API_KEY` is optional. When present, TruthShield uses free-capped Brave Web/Image Search requests for source leads and citations. Brave is useful for text/context clues, but it does not compare uploaded pixels directly.
+- Local Hugging Face detectors are optional and free to run locally, but require `transformers` and `torch` in the backend environment and may download model files. The default optional list uses `Organika/sdxl-detector` as a newer SDXL-focused signal and `dima806/deepfake_vs_real_image_detection` as a second opinion. Check model licenses before commercial deployment. If they are unavailable, TruthShield uses a deterministic synthetic-likelihood fallback.
 - C2PA provenance checks use `c2pa-python` or `c2patool` if available. Missing content credentials are treated as a risk signal, not proof that media is fake.
 - Image uploads are fingerprinted locally. SHA-256 identifies the exact file bytes, while perceptual hashes support visual similarity matching if you connect a reverse-image provider or your own dataset.
-- Free web research is indexed web/image search from generated queries. It is not an unlimited exact reverse image search across the entire internet. For pixel-level online matching, connect a dedicated reverse-image provider such as Google Lens, TinEye, Bing Visual Search, or an internal pHash database.
+- Local pixel forensics check residual noise, JPEG block boundaries, frequency artifacts, error-level differences, repeated patches, clipping, and caption/graphic overlays. These clues help separate "captioned or edited" from "AI-generated," but they are still not proof.
+- Free web research is indexed web/image search from generated queries unless Google Vision Web Detection is configured. It is not an unlimited exact reverse image search across the entire internet. For additional manual checking, use Google Lens, TinEye, Bing Visual Search, or an internal pHash database.
 
 ## Run The Frontend
 
@@ -208,8 +212,10 @@ Image and video checks include:
 - Entropy
 - Blur / over-smoothing estimate
 - Compression and texture consistency
+- Pixel-level forensic signals
 - Local synthetic-image detector signals
 - Exact file fingerprint and perceptual hash signals
+- Optional uploaded-image web detection for full, partial, and visually similar online matches
 - Optional C2PA content credentials check
 - Optional free-capped indexed web/image research
 - Sampled video frame scores
@@ -231,7 +237,7 @@ Text checks include:
 TruthShield can improve in three practical ways:
 
 1. Add `BRAVE_SEARCH_API_KEY` so every scan can use indexed web/image search for source leads.
-2. Connect a reverse-image or web-detection provider for pixel-level matches. Good targets are Google Cloud Vision Web Detection, TinEye API, Bing Visual Search, or your own pHash index.
+2. Add `GOOGLE_VISION_API_KEY` so image uploads can use Google Cloud Vision Web Detection for full, partial, visually similar, and page-level image matches.
 3. Train or fine-tune an image classifier on a labeled dataset, then set `AI_IMAGE_DETECTOR_MODELS` to the exported Hugging Face model ID.
 
 Training notes:

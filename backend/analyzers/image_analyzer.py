@@ -10,6 +10,7 @@ import numpy as np
 from PIL import Image, ImageStat, UnidentifiedImageError
 
 from analyzers.enhanced import enhance_image_result
+from analyzers.image_forensics import analyze_image_forensics
 from analyzers.metadata import extract_exif_metadata, has_camera_make_or_model, metadata_score
 from analyzers.scoring import (
     DISCLAIMER,
@@ -120,15 +121,36 @@ def _analyze_pil_image(
         score -= 8
         warnings.append("Possible over-smoothing or heavy blur was detected.")
 
+    forensics = analyze_image_forensics(image, content_bytes=content_bytes, filename=filename)
+    forensic_warnings = list(forensics.get("warnings", []))
+    forensic_positives = list(forensics.get("positive_signals", []))
+    caption_like = bool((forensics.get("caption_overlay") or {}).get("is_likely"))
+
     compression = _compression_consistency_score(image)
     if compression["is_inconsistent"]:
-        score -= 7
-        warnings.append("Compression or texture patterns vary sharply across the image.")
+        score -= 2 if caption_like else 7
+        if caption_like:
+            warnings.append("Compression varies across the image, likely influenced by an added caption or graphic overlay.")
+        else:
+            warnings.append("Compression or texture patterns vary sharply across the image.")
     else:
         score += 5
         positives.append("No major compression inconsistency was detected.")
 
     color_stats = _color_statistics(image)
+    forensic_score = float(forensics.get("score", 50.0))
+    synthetic_artifact_probability = float(forensics.get("synthetic_artifact_probability", 0.5))
+    if synthetic_artifact_probability >= 0.62:
+        score -= 12
+    elif synthetic_artifact_probability <= 0.28:
+        score += 6
+    if forensic_score >= 75:
+        score += 5
+    elif forensic_score < 45:
+        score -= 8
+    warnings.extend(forensic_warnings)
+    positives.extend(forensic_positives)
+
     visual_consistency = _visual_consistency_score(entropy, blur_score, width, height)
     final_score = clamp_score(score)
     risk_level, verdict = get_risk_level(final_score)
@@ -137,6 +159,8 @@ def _analyze_pil_image(
         "metadata_score": metadata_score(exif) if include_metadata else 55.0,
         "visual_consistency_score": visual_consistency,
         "compression_score": compression["score"],
+        "pixel_forensic_score": round(forensic_score, 2),
+        "ai_artifact_score": round(synthetic_artifact_probability * 100.0, 2),
         "source_score": 50.0,
         "overall_risk_score": float(100 - final_score),
     }
@@ -150,6 +174,7 @@ def _analyze_pil_image(
         "entropy": round(entropy, 3),
         "blur_laplacian_variance": round(blur_score, 3),
         "compression_consistency": compression,
+        "forensic_analysis": forensics,
         "color_statistics": color_stats,
         "metadata_fields_found": sorted(exif.keys())[:20],
         "heuristic_note": "These signals are educational heuristics and are not proof of authenticity or manipulation.",

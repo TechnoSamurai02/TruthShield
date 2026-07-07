@@ -36,9 +36,11 @@ ENABLE_ENHANCED_ANALYSIS=true
 BRAVE_SEARCH_API_KEY=
 WEB_RESEARCH_PER_SCAN_LIMIT=2
 WEB_RESEARCH_MONTHLY_LIMIT=150
+GOOGLE_VISION_API_KEY=
+GOOGLE_VISION_MAX_RESULTS=10
 ENABLE_LOCAL_AI_MODELS=true
-AI_IMAGE_DETECTOR_MODELS=dima806/deepfake_vs_real_image_detection
+AI_IMAGE_DETECTOR_MODELS=Organika/sdxl-detector,dima806/deepfake_vs_real_image_detection
 LOCAL_REASONING_BASE_URL=
 ```
 
-`BRAVE_SEARCH_API_KEY`, Hugging Face model dependencies, C2PA tooling, and a local reasoning endpoint are optional. The API still returns a valid report when any of them are absent.
+`GOOGLE_VISION_API_KEY`, `BRAVE_SEARCH_API_KEY`, Hugging Face model dependencies, C2PA tooling, and a local reasoning endpoint are optional. The API still returns a valid report when any of them are absent.

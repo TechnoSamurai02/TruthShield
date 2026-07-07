@@ -12,7 +12,12 @@ function formatLabel(key: string): string {
 }
 
 function metricTone(key: string, value: number): string {
-  const isRisk = key.includes("risk") || key.includes("manipulation");
+  const isRisk =
+    key.includes("risk") ||
+    key.includes("manipulation") ||
+    key.includes("artifact") ||
+    key.includes("synthetic") ||
+    key.includes("ai_generation");
   if (isRisk) {
     if (value >= 70) return "bg-red-400";
     if (value >= 40) return "bg-orange-400";
