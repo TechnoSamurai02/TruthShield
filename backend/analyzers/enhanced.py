@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Sequence
 
 from PIL import Image
 
@@ -19,6 +19,7 @@ def enhance_image_result(
     filename: str,
     content_bytes: bytes | None,
     content_label: str,
+    detector_model_ids: Sequence[str] | None = None,
 ) -> Dict[str, Any]:
     settings = get_settings()
     if not settings.enable_enhanced_analysis:
@@ -30,7 +31,7 @@ def enhance_image_result(
         technical["attachment_fingerprint"] = attachment_fingerprint
         result["technical_details"] = technical
     metadata_present = bool(technical.get("metadata_fields_found"))
-    detectors = run_image_detectors(image, filename, metadata_present, technical)
+    detectors = run_image_detectors(image, filename, metadata_present, technical, model_ids=detector_model_ids)
     provenance = verify_image_provenance(content_bytes, filename) if content_bytes else None
     web_research = (
         research_image_context(filename, attachment_fingerprint=attachment_fingerprint, content_bytes=content_bytes)
@@ -182,7 +183,12 @@ def enhance_text_result(result: Dict[str, Any], text: str) -> Dict[str, Any]:
     return result
 
 
-def enhance_video_result(result: Dict[str, Any], frame_results: List[Dict[str, Any]], filename: str) -> Dict[str, Any]:
+def enhance_video_result(
+    result: Dict[str, Any],
+    frame_results: List[Dict[str, Any]],
+    filename: str,
+    video_detectors: List[Dict[str, Any]] | None = None,
+) -> Dict[str, Any]:
     settings = get_settings()
     if not settings.enable_enhanced_analysis:
         return _with_local_mode(result)
@@ -193,20 +199,39 @@ def enhance_video_result(result: Dict[str, Any], frame_results: List[Dict[str, A
         if frame.get("detectors")
     ]
     frame_probabilities = [probability for probability in frame_probabilities if probability is not None]
-    detector_probability = max(frame_probabilities) if frame_probabilities else None
-    detectors = [
-        {
-            "name": "sampled_frame_ai_detector_summary",
-            "status": "completed" if detector_probability is not None else "unavailable",
-            "label": _probability_label(detector_probability),
-            "score": detector_probability,
-            "synthetic_probability": detector_probability,
-            "details": {
-                "frames_with_detector_signals": len(frame_probabilities),
-                "note": "Video evidence is aggregated from sampled frames.",
-            },
-        }
-    ]
+    technical = result.get("technical_details") or {}
+    temporal_forensics = technical.get("temporal_forensics") or {}
+    summarized_probability = temporal_forensics.get("frame_ai_probability")
+    if not isinstance(summarized_probability, (int, float)):
+        summarized_probability = _robust_frame_probability(frame_probabilities)
+    frame_summary_detector = {
+        "name": "all_frame_ai_detector_summary",
+        "status": "completed" if summarized_probability is not None else "unavailable",
+        "label": _probability_label(summarized_probability),
+        "score": summarized_probability,
+        "synthetic_probability": summarized_probability,
+        "details": {
+            "frames_with_detector_signals": len(frame_probabilities),
+            "frames_analyzed": result.get("frames_analyzed", len(frame_results)),
+            "note": "Frame evidence uses a robust mean, upper percentile, high-risk ratio, and sustained-run ratio instead of trusting one isolated frame.",
+        },
+    }
+    detectors = [frame_summary_detector, *(video_detectors or result.get("detectors", []))]
+    weighted_probabilities: List[tuple[float, float]] = []
+    if isinstance(summarized_probability, (int, float)):
+        weighted_probabilities.append((float(summarized_probability), 1.25))
+    for detector in detectors[1:]:
+        probability = detector.get("synthetic_probability")
+        if not isinstance(probability, (int, float)):
+            continue
+        weight = 1.35 if detector.get("name") == "trained_truthshield_video_detector" else 0.55
+        weighted_probabilities.append((float(probability), weight))
+    detector_probability = (
+        sum(probability * weight for probability, weight in weighted_probabilities)
+        / sum(weight for _, weight in weighted_probabilities)
+        if weighted_probabilities
+        else None
+    )
     frame_notes = [
         warning
         for frame in frame_results[:3]
@@ -216,11 +241,13 @@ def enhance_video_result(result: Dict[str, Any], frame_results: List[Dict[str, A
     base_score = float(result.get("truth_score", 50))
     detector_truth = 50.0 if detector_probability is None else 100.0 - detector_probability * 100.0
     web_score = float(web_research["score"])
-    final_score = clamp_score(base_score * 0.58 + detector_truth * 0.28 + web_score * 0.14)
+    final_score = clamp_score(base_score * 0.50 + detector_truth * 0.38 + web_score * 0.12)
     warnings = list(result.get("warnings", []))
     positives = list(result.get("positive_signals", []))
     if detector_probability is not None and detector_probability >= 0.70:
-        warnings.append("One or more sampled frames had high synthetic-image detector signals.")
+        warnings.append("Frame and temporal detector signals indicate a high likelihood of synthetic video.")
+    elif detector_probability is not None and detector_probability <= 0.30:
+        positives.append("Frame and temporal detectors did not show strong synthetic-video signals.")
     if web_research["matches_found"] > 0:
         positives.append("Automated indexed web research found possible video context leads.")
     elif web_research["status"] == "no_results":
@@ -231,6 +258,7 @@ def enhance_video_result(result: Dict[str, Any], frame_results: List[Dict[str, A
     evidence.update(
         {
             "sampled_frame_ai_generation_score": round(100.0 - detector_truth, 2),
+            "video_ai_generation_score": round(100.0 - detector_truth, 2),
             "web_corroboration_score": round(web_score, 2),
             "overall_risk_score": float(100 - final_score),
         }
@@ -294,6 +322,19 @@ def _weighted_score(values: Dict[str, float], weights: Dict[str, float]) -> floa
     return total / weight_total
 
 
+def _robust_frame_probability(probabilities: List[float]) -> float | None:
+    if not probabilities:
+        return None
+    ordered = sorted(float(value) for value in probabilities)
+    mean = sum(ordered) / len(ordered)
+    position = 0.90 * (len(ordered) - 1)
+    lower = int(position)
+    upper = min(len(ordered) - 1, lower + 1)
+    p90 = ordered[lower] * (1.0 - (position - lower)) + ordered[upper] * (position - lower)
+    high_ratio = sum(value >= 0.65 for value in ordered) / len(ordered)
+    return max(0.0, min(1.0, mean * 0.55 + p90 * 0.30 + high_ratio * 0.15))
+
+
 def _analysis_mode(web_research: Dict[str, Any] | None) -> str:
     if web_research and web_research.get("status") in {"completed", "no_results", "error"}:
         return "enhanced_free_hybrid"
@@ -321,10 +362,10 @@ def _probability_label(probability: float | None) -> str | None:
     if probability is None:
         return None
     if probability >= 0.65:
-        return "sampled_frames_likely_synthetic"
+        return "analyzed_frames_likely_synthetic"
     if probability <= 0.30:
-        return "sampled_frames_lower_synthetic_signal"
-    return "sampled_frames_uncertain"
+        return "analyzed_frames_lower_synthetic_signal"
+    return "analyzed_frames_uncertain"
 
 
 def _source_match(web_research: Dict[str, Any] | None) -> Dict[str, Any]:

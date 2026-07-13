@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import io
 import os
+import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import cv2
@@ -10,10 +12,17 @@ import numpy as np
 from PIL import Image
 
 from analyzers.enhanced import enhance_image_result, enhance_video_result
+from analyzers.ai_detectors import (
+    _covering_tiles,
+    _prepare_classifier_image,
+    combined_synthetic_probability,
+    reuse_full_frame_predictions_as_single_tile,
+)
 from analyzers.image_forensics import analyze_image_forensics
 from analyzers.image_analyzer import analyze_frame_array, analyze_image_bytes
 from analyzers.provenance import verify_image_provenance
 from analyzers.text_analyzer import analyze_text
+from analyzers.video_analyzer import _uniform_frame_positions, analyze_video_path
 from analyzers.web_research import research_image_context, research_text_claims
 from models.schemas import AnalysisResponse, VideoAnalysisResponse
 
@@ -199,6 +208,100 @@ class EnhancedAnalysisTests(unittest.TestCase):
 
         self.assertEqual(frame_result["content_type"], "video_frame")
         VideoAnalysisResponse(**enhanced_video)
+
+    def test_exhaustive_video_mode_analyzes_every_decoded_frame(self) -> None:
+        width, height, frame_count = 320, 240, 6
+        with tempfile.NamedTemporaryFile(suffix=".avi", delete=False) as temp:
+            path = temp.name
+        writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"MJPG"), 6.0, (width, height))
+        self.assertTrue(writer.isOpened())
+        try:
+            for index in range(frame_count):
+                frame = np.zeros((height, width, 3), dtype=np.uint8)
+                frame[:, :, 1] = 30 + index * 20
+                cv2.circle(frame, (50 + index * 18, 120), 28, (240, 180, 40), -1)
+                writer.write(frame)
+        finally:
+            writer.release()
+
+        try:
+            with patch.dict(
+                os.environ,
+                {
+                    "ENABLE_LOCAL_AI_MODELS": "false",
+                    "BRAVE_SEARCH_API_KEY": "",
+                    "GOOGLE_VISION_API_KEY": "",
+                    "VIDEO_ANALYSIS_MODE": "exhaustive",
+                    "VIDEO_FRAME_STRIDE": "1",
+                    "VIDEO_MAX_FRAMES": "0",
+                    "VIDEO_TILE_ANALYSIS": "false",
+                },
+                clear=False,
+            ):
+                result = analyze_video_path(path, "unit-test.avi")
+        finally:
+            os.unlink(path)
+
+        coverage = result["technical_details"]["analysis_coverage"]
+        self.assertEqual(result["frames_analyzed"], frame_count)
+        self.assertEqual(result["technical_details"]["decoded_frame_count"], frame_count)
+        self.assertTrue(coverage["exhaustive"])
+        self.assertEqual(coverage["coverage_percent"], 100.0)
+        self.assertEqual(coverage["native_pixels_examined"], width * height * frame_count)
+        self.assertIn("video_model_features", result["technical_details"])
+        VideoAnalysisResponse(**result)
+
+    def test_tiled_scan_boxes_cover_every_source_pixel(self) -> None:
+        image = Image.new("RGB", (1000, 731), color=(30, 80, 120))
+        _, boxes = _covering_tiles(image, tile_size=448, overlap=0.15)
+        coverage = np.zeros((731, 1000), dtype=np.uint8)
+        for left, top, right, bottom in boxes:
+            coverage[top:bottom, left:right] = 1
+        self.assertTrue(np.all(coverage == 1))
+
+    def test_declared_video_frame_preprocessing_is_applied(self) -> None:
+        classifier = SimpleNamespace(
+            model=SimpleNamespace(
+                config=SimpleNamespace(
+                    truthshield_training_frame_encoding="opencv_jpeg_95",
+                    truthshield_preprocess_max_dimension=384,
+                )
+            )
+        )
+        prepared = _prepare_classifier_image(
+            classifier,
+            Image.new("RGB", (720, 480), color=(20, 90, 180)),
+        )
+        self.assertEqual(prepared.size, (384, 256))
+
+    def test_temporal_model_positions_cover_video_start_and_end(self) -> None:
+        positions = _uniform_frame_positions(frame_count=172, limit=16)
+        self.assertEqual(len(positions), 16)
+        self.assertEqual(positions[0], 0)
+        self.assertEqual(positions[-1], 171)
+
+    def test_reused_single_tile_does_not_double_weight_the_model(self) -> None:
+        detectors = [
+            {
+                "name": "local_heuristic_synthetic_likelihood",
+                "status": "completed",
+                "synthetic_probability": 0.2,
+                "details": {},
+            },
+            {
+                "name": "test-model",
+                "status": "completed",
+                "label": "ai_generated",
+                "score": 0.8,
+                "synthetic_probability": 0.8,
+                "details": {},
+            },
+        ]
+        before = combined_synthetic_probability(detectors)
+        reused = reuse_full_frame_predictions_as_single_tile(detectors, ["test-model"])
+        after = combined_synthetic_probability([*detectors, *reused])
+        self.assertEqual(before, after)
+        self.assertTrue(reused[0]["details"]["reused_full_frame_prediction"])
 
 
 if __name__ == "__main__":

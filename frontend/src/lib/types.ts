@@ -47,8 +47,11 @@ export interface CustomFeedback {
 
 export interface SuspiciousFrame {
   frame_index: number;
+  source_frame_number?: number | null;
   timestamp_seconds?: number | null;
   truth_score: number;
+  synthetic_probability?: number | null;
+  tile_synthetic_probability?: number | null;
   warnings: string[];
 }
 

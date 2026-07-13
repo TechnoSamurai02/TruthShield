@@ -16,7 +16,8 @@ The app is intentionally honest: it does not claim to prove that something is fa
 
 - Image upload analysis for `.jpg`, `.jpeg`, `.png`, and `.webp`
 - Video upload analysis for `.mp4`, `.mov`, and `.webm`
-- Video frame extraction with up to 8 sampled frames
+- Exhaustive video decoding with every frame analyzed by default
+- Full-frame pixel forensics, overlapping model tiles, and neighboring-frame temporal consistency checks
 - Text/post analysis with demo examples for judges
 - Truth Score, risk level, verdict, summary, and recommendations
 - Evidence breakdown for metadata, visual consistency, compression, language risk, and claim risk
@@ -86,6 +87,12 @@ GOOGLE_VISION_API_KEY=
 GOOGLE_VISION_MAX_RESULTS=10
 ENABLE_LOCAL_AI_MODELS=true
 AI_IMAGE_DETECTOR_MODELS=Organika/sdxl-detector,dima806/deepfake_vs_real_image_detection
+AI_VIDEO_FRAME_DETECTOR_MODELS=
+AI_VIDEO_TEMPORAL_MODEL_PATH=
+VIDEO_ANALYSIS_MODE=exhaustive
+VIDEO_FRAME_STRIDE=1
+VIDEO_MAX_FRAMES=0
+VIDEO_TILE_ANALYSIS=true
 LOCAL_REASONING_BASE_URL=
 ```
 
@@ -170,9 +177,10 @@ Input: multipart file upload
 Behavior:
 
 - Saves upload temporarily
-- Extracts up to 8 frames
-- Runs frame-level image heuristics
-- Averages frame results
+- Decodes and analyzes every frame by default
+- Runs complete-frame pixel forensics and optional overlapping model tiles
+- Compares neighboring frames for motion, noise, edge, duplicate-frame, and scene-cut consistency
+- Aggregates sustained evidence instead of letting one isolated frame decide the result
 - Deletes the temporary file
 
 Also returns:
@@ -218,7 +226,7 @@ Image and video checks include:
 - Optional uploaded-image web detection for full, partial, and visually similar online matches
 - Optional C2PA content credentials check
 - Optional free-capped indexed web/image research
-- Sampled video frame scores
+- Every-frame video scores, coverage evidence, tile evidence, and temporal consistency
 
 Text checks include:
 
@@ -240,6 +248,8 @@ TruthShield can improve in three practical ways:
 2. Add `GOOGLE_VISION_API_KEY` so image uploads can use Google Cloud Vision Web Detection for full, partial, visually similar, and page-level image matches.
 3. Train or fine-tune an image classifier on a labeled dataset, then set `AI_IMAGE_DETECTOR_MODELS` to the exported Hugging Face model ID.
 
+Starter scripts and beginner training guides live in [training/README.md](./training/README.md) and [training/VIDEO_TRAINING_GUIDE.md](./training/VIDEO_TRAINING_GUIDE.md).
+
 Training notes:
 
 - Use balanced real-camera and AI-generated image data, with separate train, validation, and test splits.
@@ -250,7 +260,7 @@ Training notes:
 
 ## Limitations
 
-TruthShield AI is a hackathon MVP, not a forensic system. Its signals are explainable heuristics and can be wrong. Missing metadata does not prove an image is fake, and normal metadata does not prove an image is real. Attachment fingerprints are powerful only when there is a provider or dataset to compare against. Video frame sampling can miss important moments. Text analysis can identify risky language patterns, but it cannot independently verify real-world facts.
+TruthShield AI is a hackathon project, not a forensic laboratory. Its signals can be wrong. Missing metadata does not prove an image is fake, and normal metadata does not prove an image is real. Attachment fingerprints are powerful only when there is a provider or dataset to compare against. Exhaustive video analysis reduces missed moments but can be extremely slow, and natural motion or compression can imitate AI artifacts. Text analysis can identify risky language patterns, but it cannot independently verify real-world facts.
 
 Every result includes this disclaimer:
 
@@ -276,7 +286,7 @@ Every result includes this disclaimer:
 6. Point out the low score, urgency warnings, no-source warning, and recommendations.
 7. Load the normal news-style post and compare the higher score.
 8. Upload a sample image and show the metadata, entropy, visual consistency, and compression signals.
-9. Upload a short video and show the sampled frame analysis.
+9. Upload a short video and show the exhaustive frame coverage and temporal analysis.
 10. Emphasize that the app recommends verification and never claims certainty.
 
 ## Future Improvements

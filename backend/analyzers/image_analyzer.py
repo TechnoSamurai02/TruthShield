@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import math
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -46,7 +46,11 @@ def analyze_image_bytes(data: bytes, filename: str = "upload") -> Dict[str, Any]
     )
 
 
-def analyze_frame_array(frame_bgr: np.ndarray, frame_label: str = "video frame") -> Dict[str, Any]:
+def analyze_frame_array(
+    frame_bgr: np.ndarray,
+    frame_label: str = "video frame",
+    detector_model_ids: Sequence[str] | None = None,
+) -> Dict[str, Any]:
     if frame_bgr is None or frame_bgr.size == 0:
         raise ValueError("The video frame was empty.")
     frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
@@ -57,6 +61,7 @@ def analyze_frame_array(frame_bgr: np.ndarray, frame_label: str = "video frame")
         include_metadata=False,
         content_bytes=None,
         content_label="video frame",
+        detector_model_ids=detector_model_ids,
     )
 
 
@@ -66,6 +71,7 @@ def _analyze_pil_image(
     include_metadata: bool,
     content_bytes: bytes | None,
     content_label: str,
+    detector_model_ids: Sequence[str] | None = None,
 ) -> Dict[str, Any]:
     score = 70
     warnings: List[str] = []
@@ -201,6 +207,7 @@ def _analyze_pil_image(
         filename=filename,
         content_bytes=content_bytes,
         content_label=content_label,
+        detector_model_ids=detector_model_ids,
     )
 
 

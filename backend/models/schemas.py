@@ -12,8 +12,11 @@ class TextAnalysisRequest(BaseModel):
 
 class SuspiciousFrame(BaseModel):
     frame_index: int
+    source_frame_number: Optional[int] = None
     timestamp_seconds: Optional[float] = None
     truth_score: int
+    synthetic_probability: Optional[float] = None
+    tile_synthetic_probability: Optional[float] = None
     warnings: List[str]
 
 

@@ -68,6 +68,11 @@ export default function ResultCard({ result }: ResultCardProps) {
                 {typeof frame.timestamp_seconds === "number" && (
                   <p className="mt-1 text-xs text-white/50">{frame.timestamp_seconds.toFixed(2)} seconds</p>
                 )}
+                {typeof frame.synthetic_probability === "number" && (
+                  <p className="mt-1 text-xs text-red-100/70">
+                    {Math.round(frame.synthetic_probability * 100)}% synthetic signal
+                  </p>
+                )}
                 <ul className="mt-3 space-y-2 text-sm text-white/70">
                   {frame.warnings.map((warning) => (
                     <li key={warning}>{warning}</li>

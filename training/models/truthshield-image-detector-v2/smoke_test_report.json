@@ -1,0 +1,169 @@
+{
+  "accuracy": 0.7,
+  "balanced_accuracy": 0.720668,
+  "binary_ai_detection": {
+    "accuracy": 0.833333,
+    "available": true,
+    "confusion_matrix": {
+      "false_ai_alarm": 4,
+      "missed_ai": 1,
+      "true_ai": 5,
+      "true_non_ai": 20
+    },
+    "expected_calibration_error": 0.117542,
+    "false_negative_rate": 0.166667,
+    "false_positive_rate": 0.166667,
+    "precision": 0.555556,
+    "recall": 0.833333,
+    "roc_auc": 0.958333,
+    "specificity": 0.833333,
+    "threshold": 0.5
+  },
+  "classes": {
+    "ai_generated": {
+      "f1": 0.666667,
+      "precision": 0.555556,
+      "recall": 0.833333,
+      "support": 6
+    },
+    "real_camera": {
+      "f1": 0.666667,
+      "precision": 0.642857,
+      "recall": 0.692308,
+      "support": 13
+    },
+    "real_edited_or_captioned": {
+      "f1": 0.777778,
+      "precision": 1.0,
+      "recall": 0.636364,
+      "support": 11
+    }
+  },
+  "confusion_matrix_rows_expected_columns_predicted": [
+    [
+      5,
+      1,
+      0
+    ],
+    [
+      4,
+      9,
+      0
+    ],
+    [
+      0,
+      4,
+      7
+    ]
+  ],
+  "data_split": "C:\\Users\\rishi\\OneDrive\\Desktop\\Hackathon Project\\truthshield-ai\\training\\data\\defactify_sample\\test",
+  "labels": [
+    "ai_generated",
+    "real_camera",
+    "real_edited_or_captioned"
+  ],
+  "macro_f1": 0.703704,
+  "misclassified_examples": [
+    {
+      "confidence": 0.637704,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_001074.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.33467,
+        "real_camera": 0.637704,
+        "real_edited_or_captioned": 0.027626
+      }
+    },
+    {
+      "confidence": 0.729621,
+      "expected": "real_camera",
+      "path": "training\\data\\defactify_sample\\test\\real_camera\\test_real_camera_000379.jpg",
+      "predicted": "ai_generated",
+      "scores": {
+        "ai_generated": 0.729621,
+        "real_camera": 0.238873,
+        "real_edited_or_captioned": 0.031506
+      }
+    },
+    {
+      "confidence": 0.569309,
+      "expected": "real_camera",
+      "path": "training\\data\\defactify_sample\\test\\real_camera\\test_real_camera_000675.jpg",
+      "predicted": "ai_generated",
+      "scores": {
+        "ai_generated": 0.569309,
+        "real_camera": 0.375774,
+        "real_edited_or_captioned": 0.054917
+      }
+    },
+    {
+      "confidence": 0.667112,
+      "expected": "real_camera",
+      "path": "training\\data\\defactify_sample\\test\\real_camera\\test_real_camera_001304.jpg",
+      "predicted": "ai_generated",
+      "scores": {
+        "ai_generated": 0.667112,
+        "real_camera": 0.299735,
+        "real_edited_or_captioned": 0.033153
+      }
+    },
+    {
+      "confidence": 0.684634,
+      "expected": "real_camera",
+      "path": "training\\data\\defactify_sample\\test\\real_camera\\test_real_camera_001412.jpg",
+      "predicted": "ai_generated",
+      "scores": {
+        "ai_generated": 0.684634,
+        "real_camera": 0.279032,
+        "real_edited_or_captioned": 0.036334
+      }
+    },
+    {
+      "confidence": 0.72847,
+      "expected": "real_edited_or_captioned",
+      "path": "training\\data\\defactify_sample\\test\\real_edited_or_captioned\\test_real_camera_000136_captioned_00333.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.091434,
+        "real_camera": 0.72847,
+        "real_edited_or_captioned": 0.180096
+      }
+    },
+    {
+      "confidence": 0.667083,
+      "expected": "real_edited_or_captioned",
+      "path": "training\\data\\defactify_sample\\test\\real_edited_or_captioned\\test_real_camera_000476_captioned_00215.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.215516,
+        "real_camera": 0.667083,
+        "real_edited_or_captioned": 0.117401
+      }
+    },
+    {
+      "confidence": 0.743386,
+      "expected": "real_edited_or_captioned",
+      "path": "training\\data\\defactify_sample\\test\\real_edited_or_captioned\\test_real_camera_000783_captioned_00289.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.10604,
+        "real_camera": 0.743386,
+        "real_edited_or_captioned": 0.150574
+      }
+    },
+    {
+      "confidence": 0.663623,
+      "expected": "real_edited_or_captioned",
+      "path": "training\\data\\defactify_sample\\test\\real_edited_or_captioned\\test_real_camera_002051_captioned_00922.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.222883,
+        "real_camera": 0.663623,
+        "real_edited_or_captioned": 0.113493
+      }
+    }
+  ],
+  "model_dir": "C:\\Users\\rishi\\OneDrive\\Desktop\\Hackathon Project\\truthshield-ai\\training\\models\\truthshield-image-detector-v2",
+  "sample_count": 30
+}

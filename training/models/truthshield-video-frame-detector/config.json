@@ -1,0 +1,53 @@
+{
+  "architectures": [
+    "ResNetForImageClassification"
+  ],
+  "depths": [
+    3,
+    4,
+    6,
+    3
+  ],
+  "downsample_in_bottleneck": false,
+  "downsample_in_first_stage": false,
+  "dtype": "float32",
+  "embedding_size": 64,
+  "hidden_act": "relu",
+  "hidden_sizes": [
+    256,
+    512,
+    1024,
+    2048
+  ],
+  "id2label": {
+    "0": "ai_generated",
+    "1": "real_camera"
+  },
+  "label2id": {
+    "ai_generated": 0,
+    "real_camera": 1
+  },
+  "layer_type": "bottleneck",
+  "model_type": "resnet",
+  "num_channels": 3,
+  "out_features": [
+    "stage4"
+  ],
+  "out_indices": [
+    4
+  ],
+  "problem_type": "single_label_classification",
+  "stage_names": [
+    "stem",
+    "stage1",
+    "stage2",
+    "stage3",
+    "stage4"
+  ],
+  "transformers_version": "5.13.0",
+  "truthshield_base_model": "C:\\Users\\rishi\\OneDrive\\Desktop\\Hackathon Project\\truthshield-ai\\training\\models\\truthshield-image-detector-v2",
+  "truthshield_preprocess_max_dimension": 384,
+  "truthshield_training_frame_encoding": "opencv_jpeg_95",
+  "truthshield_training_method": "frozen_resnet_embeddings_regularized_logistic_head",
+  "truthshield_video_threshold": 0.415
+}

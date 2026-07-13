@@ -1,4 +1,4 @@
-import { BadgeCheck, Bot, ExternalLink, FileSearch, Fingerprint, Microscope, ScanSearch, Sparkles } from "lucide-react";
+import { BadgeCheck, Bot, ExternalLink, FileSearch, Film, Fingerprint, Microscope, ScanSearch, Sparkles } from "lucide-react";
 import type { AnalysisResult, Citation, DetectorResult } from "../lib/types";
 
 interface EnhancedInsightsProps {
@@ -57,6 +57,19 @@ interface ForensicAnalysis {
   duplicate_patch_analysis?: Record<string, unknown>;
 }
 
+interface VideoCoverage {
+  mode?: string;
+  exhaustive?: boolean;
+  frame_stride?: number;
+  frames_analyzed?: number;
+  coverage_percent?: number;
+  native_pixels_examined?: number;
+  tile_analysis_enabled?: boolean;
+  tile_count?: number;
+  tiled_source_pixels_covered?: number;
+  model_input_note?: string;
+}
+
 function objectRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
@@ -78,6 +91,17 @@ function forensicFrom(result: AnalysisResult): ForensicAnalysis | null {
   const technical = objectRecord(result.technical_details);
   const forensic = objectRecord(technical?.forensic_analysis);
   return forensic ? (forensic as ForensicAnalysis) : null;
+}
+
+function videoCoverageFrom(result: AnalysisResult): VideoCoverage | null {
+  const technical = objectRecord(result.technical_details);
+  const coverage = objectRecord(technical?.analysis_coverage);
+  return coverage ? (coverage as VideoCoverage) : null;
+}
+
+function readableCount(value?: number): string {
+  if (typeof value !== "number" || Number.isNaN(value)) return "n/a";
+  return Math.round(value).toLocaleString();
 }
 
 function shortHash(value?: string): string | null {
@@ -143,6 +167,7 @@ export default function EnhancedInsights({ result }: EnhancedInsightsProps) {
   const sourceMatch = sourceMatchFrom(result);
   const fingerprint = fingerprintFrom(result);
   const forensic = forensicFrom(result);
+  const videoCoverage = videoCoverageFrom(result);
   const phash = fingerprint?.perceptual_hashes?.phash;
   const captionLikely = forensic?.caption_overlay?.is_likely;
 
@@ -214,6 +239,34 @@ export default function EnhancedInsights({ result }: EnhancedInsightsProps) {
               </div>
             )}
           </div>
+        </section>
+      )}
+
+      {videoCoverage && (
+        <section className="panel">
+          <div className="mb-4 flex items-center gap-2">
+            <Film className="h-5 w-5 text-sky-200" />
+            <h3 className="text-base font-bold text-white">Video Coverage</h3>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {metricRow("Frames", readableCount(videoCoverage.frames_analyzed))}
+            {metricRow(
+              "Coverage",
+              typeof videoCoverage.coverage_percent === "number" ? `${videoCoverage.coverage_percent.toFixed(1)}%` : "n/a",
+              videoCoverage.exhaustive ? "text-emerald-100" : "text-yellow-100",
+            )}
+            {metricRow("Native Pixels", readableCount(videoCoverage.native_pixels_examined))}
+            {metricRow("Model Tiles", readableCount(videoCoverage.tile_count))}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold uppercase">
+            <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-white/70">
+              {videoCoverage.exhaustive ? "Every decoded frame" : readableStatus(videoCoverage.mode ?? "partial")}
+            </span>
+            <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-white/70">
+              Stride {videoCoverage.frame_stride ?? "n/a"}
+            </span>
+          </div>
+          {videoCoverage.model_input_note && <p className="mt-3 text-sm leading-6 text-white/60">{videoCoverage.model_input_note}</p>}
         </section>
       )}
 

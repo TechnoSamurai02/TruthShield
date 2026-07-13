@@ -1,0 +1,12 @@
+accelerate>=0.33.0
+datasets>=2.20.0
+huggingface_hub>=0.24.0
+joblib>=1.4.0
+numpy>=1.26.0
+opencv-python-headless>=4.10.0
+pillow>=10.0.0
+requests>=2.32.0
+scikit-learn>=1.5.0
+torch>=2.3.0
+torchvision>=0.18.0
+transformers>=4.43.0

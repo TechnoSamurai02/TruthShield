@@ -1,0 +1,237 @@
+{
+  "model_name": "logistic_regression",
+  "threshold": 0.25,
+  "metrics": {
+    "validation": {
+      "accuracy": 0.7375,
+      "balanced_accuracy": 0.7375,
+      "precision": 0.693878,
+      "recall": 0.85,
+      "specificity": 0.625,
+      "f1": 0.764045,
+      "true_ai": 68,
+      "false_ai_alarm": 30,
+      "true_real": 50,
+      "missed_ai": 12,
+      "brier_score": 0.215996,
+      "expected_calibration_error": 0.145278,
+      "roc_auc": 0.775781,
+      "average_precision": 0.752457
+    },
+    "test": {
+      "accuracy": 0.7875,
+      "balanced_accuracy": 0.7875,
+      "precision": 0.739583,
+      "recall": 0.8875,
+      "specificity": 0.6875,
+      "f1": 0.806818,
+      "true_ai": 71,
+      "false_ai_alarm": 25,
+      "true_real": 55,
+      "missed_ai": 9,
+      "brier_score": 0.146139,
+      "expected_calibration_error": 0.077098,
+      "roc_auc": 0.878906,
+      "average_precision": 0.889212
+    },
+    "train_video_count": 800,
+    "validation_video_count": 160,
+    "test_video_count": 160
+  },
+  "feature_importance": [
+    {
+      "feature": "luma_delta_p95",
+      "importance": 0.07578125,
+      "standard_deviation": 0.01304945
+    },
+    {
+      "feature": "flow_warp_error_p95",
+      "importance": 0.0640625,
+      "standard_deviation": 0.01994866
+    },
+    {
+      "feature": "frame_ai_probability_std",
+      "importance": 0.059375,
+      "standard_deviation": 0.028125
+    },
+    {
+      "feature": "frame_ai_probability_mean",
+      "importance": 0.05234375,
+      "standard_deviation": 0.02498779
+    },
+    {
+      "feature": "frame_ai_probability_p95",
+      "importance": 0.040625,
+      "standard_deviation": 0.009375
+    },
+    {
+      "feature": "frame_ai_probability_p90",
+      "importance": 0.03359375,
+      "standard_deviation": 0.03012628
+    },
+    {
+      "feature": "flow_warp_error_mean",
+      "importance": 0.03046875,
+      "standard_deviation": 0.01446895
+    },
+    {
+      "feature": "flow_inconsistency_mean",
+      "importance": 0.0265625,
+      "standard_deviation": 0.00869963
+    },
+    {
+      "feature": "luma_delta_mean",
+      "importance": 0.0234375,
+      "standard_deviation": 0.00975781
+    },
+    {
+      "feature": "noise_delta_mean",
+      "importance": 0.021875,
+      "standard_deviation": 0.01498697
+    },
+    {
+      "feature": "edge_density_delta_mean",
+      "importance": 0.01796875,
+      "standard_deviation": 0.00579391
+    },
+    {
+      "feature": "luma_delta_std",
+      "importance": 0.01171875,
+      "standard_deviation": 0.00960016
+    },
+    {
+      "feature": "duplicate_frame_ratio",
+      "importance": 0.00625,
+      "standard_deviation": 0.00541266
+    },
+    {
+      "feature": "frame_ai_high_risk_ratio",
+      "importance": 0.0,
+      "standard_deviation": 0.0
+    },
+    {
+      "feature": "frame_ai_sustained_ratio",
+      "importance": 0.0,
+      "standard_deviation": 0.0
+    },
+    {
+      "feature": "scene_cut_ratio",
+      "importance": 0.0,
+      "standard_deviation": 0.0
+    }
+  ],
+  "model_selection": [
+    {
+      "name": "random_forest",
+      "selection_score": 0.77879428,
+      "threshold": 0.345,
+      "validation": {
+        "accuracy": 0.73125,
+        "balanced_accuracy": 0.73125,
+        "precision": 0.74026,
+        "recall": 0.7125,
+        "specificity": 0.75,
+        "f1": 0.726115,
+        "true_ai": 57,
+        "false_ai_alarm": 20,
+        "true_real": 60,
+        "missed_ai": 23,
+        "brier_score": 0.214665,
+        "expected_calibration_error": 0.150749,
+        "roc_auc": 0.785,
+        "average_precision": 0.754764
+      }
+    },
+    {
+      "name": "random_forest_regularized",
+      "selection_score": 0.76349216,
+      "threshold": 0.315,
+      "validation": {
+        "accuracy": 0.71875,
+        "balanced_accuracy": 0.71875,
+        "precision": 0.721519,
+        "recall": 0.7125,
+        "specificity": 0.725,
+        "f1": 0.716981,
+        "true_ai": 57,
+        "false_ai_alarm": 22,
+        "true_real": 58,
+        "missed_ai": 23,
+        "brier_score": 0.22734,
+        "expected_calibration_error": 0.183028,
+        "roc_auc": 0.77,
+        "average_precision": 0.734927
+      }
+    },
+    {
+      "name": "extra_trees",
+      "selection_score": 0.76629457,
+      "threshold": 0.18,
+      "validation": {
+        "accuracy": 0.71875,
+        "balanced_accuracy": 0.71875,
+        "precision": 0.663551,
+        "recall": 0.8875,
+        "specificity": 0.55,
+        "f1": 0.759358,
+        "true_ai": 71,
+        "false_ai_alarm": 36,
+        "true_real": 44,
+        "missed_ai": 9,
+        "brier_score": 0.211008,
+        "expected_calibration_error": 0.144333,
+        "roc_auc": 0.780312,
+        "average_precision": 0.772259
+      }
+    },
+    {
+      "name": "hist_gradient_boosting",
+      "selection_score": 0.7694578,
+      "threshold": 0.115,
+      "validation": {
+        "accuracy": 0.725,
+        "balanced_accuracy": 0.725,
+        "precision": 0.673077,
+        "recall": 0.875,
+        "specificity": 0.575,
+        "f1": 0.76087,
+        "true_ai": 70,
+        "false_ai_alarm": 34,
+        "true_real": 46,
+        "missed_ai": 10,
+        "brier_score": 0.231303,
+        "expected_calibration_error": 0.179651,
+        "roc_auc": 0.767656,
+        "average_precision": 0.757143
+      }
+    },
+    {
+      "name": "logistic_regression",
+      "selection_score": 0.78440434,
+      "threshold": 0.25,
+      "validation": {
+        "accuracy": 0.7375,
+        "balanced_accuracy": 0.7375,
+        "precision": 0.693878,
+        "recall": 0.85,
+        "specificity": 0.625,
+        "f1": 0.764045,
+        "true_ai": 68,
+        "false_ai_alarm": 30,
+        "true_real": 50,
+        "missed_ai": 12,
+        "brier_score": 0.215996,
+        "expected_calibration_error": 0.145278,
+        "roc_auc": 0.775781,
+        "average_precision": 0.752457
+      }
+    }
+  ],
+  "excluded_features": [
+    "frame_truth_score_mean",
+    "frame_truth_score_p10",
+    "frame_truth_score_std",
+    "pixel_forensic_probability_mean",
+    "pixel_forensic_probability_p95"
+  ]
+}

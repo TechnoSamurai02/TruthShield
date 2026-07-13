@@ -40,7 +40,13 @@ GOOGLE_VISION_API_KEY=
 GOOGLE_VISION_MAX_RESULTS=10
 ENABLE_LOCAL_AI_MODELS=true
 AI_IMAGE_DETECTOR_MODELS=Organika/sdxl-detector,dima806/deepfake_vs_real_image_detection
+AI_VIDEO_FRAME_DETECTOR_MODELS=
+AI_VIDEO_TEMPORAL_MODEL_PATH=
+VIDEO_ANALYSIS_MODE=exhaustive
+VIDEO_FRAME_STRIDE=1
+VIDEO_MAX_FRAMES=0
+VIDEO_TILE_ANALYSIS=true
 LOCAL_REASONING_BASE_URL=
 ```
 
-`GOOGLE_VISION_API_KEY`, `BRAVE_SEARCH_API_KEY`, Hugging Face model dependencies, C2PA tooling, and a local reasoning endpoint are optional. The API still returns a valid report when any of them are absent.
+`VIDEO_ANALYSIS_MODE=exhaustive`, `VIDEO_FRAME_STRIDE=1`, and `VIDEO_MAX_FRAMES=0` process every decoded frame. `VIDEO_TILE_ANALYSIS=true` adds overlapping full-coverage model tiles and can be very slow on a CPU. `GOOGLE_VISION_API_KEY`, `BRAVE_SEARCH_API_KEY`, trained model paths, C2PA tooling, and a local reasoning endpoint are optional. The API still returns a valid report when any of them are absent.

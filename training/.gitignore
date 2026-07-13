@@ -1,0 +1,28 @@
+__pycache__/
+.cache/
+data/
+models/*
+runs/
+*.pt
+*.pth
+*.safetensors
+
+# Version the final deployable models and their evaluation artifacts. Keep
+# checkpoints, smoke models, datasets, and embedding caches local/reproducible.
+!models/truthshield-image-detector-v2/
+models/truthshield-image-detector-v2/checkpoint-*/
+!models/truthshield-image-detector-v2/config.json
+!models/truthshield-image-detector-v2/model.safetensors
+!models/truthshield-image-detector-v2/preprocessor_config.json
+!models/truthshield-image-detector-v2/smoke_test_report.json
+!models/truthshield-image-detector-v2/training_args.bin
+!models/truthshield-image-detector-v2/truthshield_test_report.json
+
+!models/truthshield-video-frame-detector/
+!models/truthshield-video-frame-detector/config.json
+!models/truthshield-video-frame-detector/model.safetensors
+!models/truthshield-video-frame-detector/preprocessor_config.json
+!models/truthshield-video-frame-detector/truthshield_video_frame_metrics.json
+
+!models/truthshield-video-temporal.joblib
+!models/truthshield-video-temporal.metrics.json
