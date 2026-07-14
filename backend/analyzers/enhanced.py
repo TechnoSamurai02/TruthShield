@@ -8,6 +8,7 @@ from analyzers.ai_detectors import combined_synthetic_probability, completed_mod
 from analyzers.config import get_settings
 from analyzers.feedback import build_custom_feedback
 from analyzers.fingerprints import build_image_fingerprint
+from analyzers.image_decision import assess_image_evidence
 from analyzers.provenance import verify_image_provenance
 from analyzers.scoring import clamp_score, get_risk_level, summarize_result, unique_messages
 from analyzers.web_research import research_image_context, research_text_claims, research_video_context
@@ -43,53 +44,23 @@ def enhance_image_result(
     detector_probability = combined_synthetic_probability(detectors)
     learned_model_count = completed_model_count(detectors)
     learned_model_available = learned_model_count > 0
-    detector_truth = 50.0 if detector_probability is None else 100.0 - detector_probability * 100.0
-    provenance_score = float(provenance["score"]) if provenance else 50.0
-    web_score = float(web_research["score"]) if web_research else 50.0
-    scoring_values = {
-        "metadata": evidence.get("metadata_score", 50.0),
-        "visual": evidence.get("visual_consistency_score", result.get("truth_score", 50.0)),
-        "compression": evidence.get("compression_score", 50.0),
-        "forensic": evidence.get("pixel_forensic_score", 50.0),
-        "detector": detector_truth,
-        "provenance": provenance_score,
-        "web": web_score,
-    }
-    # Once a learned detector completes, it is the only signal here that was
-    # actually trained and measured for AI-image classification. Traditional
-    # file/forensic heuristics remain context, but cannot outvote it.
-    scoring_weights = (
-        {
-            "metadata": 0.02,
-            "visual": 0.015,
-            "compression": 0.015,
-            "forensic": 0.08,
-            "detector": 0.78,
-            "provenance": 0.05,
-            "web": 0.04,
-        }
-        if learned_model_available
-        else
-        {
-            "metadata": 0.06,
-            "visual": 0.08,
-            "compression": 0.05,
-            "forensic": 0.20,
-            "detector": 0.20,
-            "provenance": 0.16,
-            "web": 0.25,
-        }
+    assessment, decision_debug = assess_image_evidence(detectors, technical, provenance, web_research)
+    # Keep this numeric field only for backwards-compatible API clients. It is
+    # now explicitly a local file-context score and does not determine the
+    # real/uncertain/AI assessment.
+    final_score = clamp_score(float(result.get("truth_score", 50.0)))
+    provenance_score = float(provenance["score"]) if provenance and provenance.get("status") == "verified" else 50.0
+    web_match_status = str(_source_match(web_research).get("status") or "")
+    web_score = (
+        float(web_research["score"])
+        if web_research and web_match_status in {"exact_hash_match", "exact_visual_match", "partial_visual_match", "visually_similar_match"}
+        else 50.0
     )
-    recalibrated_score = _weighted_score(scoring_values, scoring_weights)
-    # Without a learned model, generic file heuristics must not produce a
-    # reassuring headline. The UI will explicitly identify fallback-only mode.
-    if not learned_model_available:
-        recalibrated_score = min(59.0, recalibrated_score)
 
     warnings = list(result.get("warnings", []))
     positives = list(result.get("positive_signals", []))
-    if learned_model_available and detector_probability is not None and detector_probability >= 0.70:
-        warnings.append("The learned AI-image detector indicates a high likelihood of generated imagery.")
+    if assessment["verdict"] == "likely_ai_generated_or_manipulated":
+        warnings.extend(assessment["evidence_raising_concern"])
         positives = [
             message
             for message in positives
@@ -103,18 +74,18 @@ def enhance_image_result(
                 )
             )
         ]
-    elif not learned_model_available:
-        warnings.append("The trained AI-image detector was unavailable; this result uses weaker fallback signals.")
-    elif detector_probability is not None and detector_probability <= 0.30:
-        positives.append("The learned AI-image detector did not strongly indicate generated imagery.")
-    if provenance and provenance["status"] in {"no_manifest", "tool_unavailable"}:
-        warnings.append("No verifiable C2PA content credentials were found for this file.")
-    elif provenance and provenance["status"] == "verified":
-        positives.append("Verifiable C2PA content credentials were found.")
-    if web_research and web_research["status"] == "no_results":
-        warnings.append("Automated indexed web research did not find corroborating source leads.")
-    elif web_research and web_research["matches_found"] > 0:
-        positives.append("Automated indexed web research found possible source or context leads.")
+    else:
+        # Low-reliability forensic heuristics remain visible in technical
+        # diagnostics, but must not read like an AI accusation when the final
+        # evidence assessment abstains or favors authenticity.
+        speculative_markers = (
+            "AI-generation artifacts",
+            "synthetic-image artifact",
+            "Fine-grain noise is unusually low",
+            "periodic artifacts",
+        )
+        warnings = [message for message in warnings if not any(marker in message for marker in speculative_markers)]
+    positives.extend(assessment["evidence_supporting_authenticity"])
     source_match = _source_match(web_research)
     if source_match.get("status") == "exact_hash_match":
         positives.append("An indexed result appears to match this file's exact fingerprint.")
@@ -126,31 +97,43 @@ def enhance_image_result(
         positives.append("Uploaded-image web detection found visually similar images online.")
     elif source_match.get("status") == "possible_context_match":
         positives.append("Indexed search found possible online context, but not a pixel-level match.")
-    elif source_match.get("status") == "not_found":
-        warnings.append("No indexed source match was found for this attachment from the available search cues.")
-
-    final_score = clamp_score(recalibrated_score)
-    risk_level, verdict = get_risk_level(final_score)
+    risk_level = assessment["label"]
+    verdict = assessment["label"]
     evidence.update(
         {
-            "ai_generation_score": round(100.0 - detector_truth, 2),
             "provenance_score": round(provenance_score, 2),
             "web_corroboration_score": round(web_score, 2),
             "overall_risk_score": float(100 - final_score),
         }
     )
+    if learned_model_available and detector_probability is not None:
+        evidence["ai_generation_score"] = round(float(detector_probability) * 100.0, 2)
     technical["ai_detector_summary"] = {
         "learned_model_available": learned_model_available,
         "completed_learned_models": learned_model_count,
-        "synthetic_probability": round(detector_probability, 4) if detector_probability is not None else None,
-        "scoring_mode": "learned_model_primary" if learned_model_available else "heuristic_fallback",
+        "synthetic_probability": (
+            round(detector_probability, 4)
+            if learned_model_available and detector_probability is not None
+            else None
+        ),
+        "fallback_heuristic_score": (
+            round(detector_probability, 4)
+            if not learned_model_available and detector_probability is not None
+            else None
+        ),
+        "scoring_mode": "three_way_evidence_assessment",
+        "decision": assessment["verdict"],
     }
+    technical["decision_debug"] = decision_debug
+    technical["legacy_context_score_note"] = (
+        "The truth_score field is retained for API compatibility and is not used for the image authenticity verdict."
+    )
     result.update(
         {
             "truth_score": final_score,
             "risk_level": risk_level,
             "verdict": verdict,
-            "summary": summarize_result(content_label, final_score, warnings, positives),
+            "summary": assessment["reason"],
             "warnings": unique_messages(warnings),
             "positive_signals": unique_messages(positives),
             "evidence": evidence,
@@ -160,17 +143,19 @@ def enhance_image_result(
             "provenance": provenance,
             "web_research": web_research,
             "citations": (web_research or {}).get("citations", []),
+            "assessment": assessment,
         }
     )
-    result["custom_feedback"] = build_custom_feedback(
-        content_label,
-        final_score,
-        result["warnings"],
-        result["positive_signals"],
-        detectors,
-        provenance,
-        web_research,
-    )
+    result["custom_feedback"] = {
+        "headline": assessment["label"],
+        "explanation": assessment["reason"],
+        "evidence_notes": [
+            *assessment["evidence_supporting_authenticity"],
+            *assessment["evidence_raising_concern"],
+            *assessment["limitations"][:2],
+        ][:6],
+        "next_steps": result.get("recommendations", [])[:3],
+    }
     return result
 
 

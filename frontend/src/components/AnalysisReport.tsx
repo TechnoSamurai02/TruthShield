@@ -56,7 +56,7 @@ function formatLabel(value: string): string {
 }
 
 const EVIDENCE_LABELS: Record<string, string> = {
-  ai_generation_score: "AI-generated likelihood",
+  ai_generation_score: "Dedicated detector AI-class score (not probability)",
   sampled_frame_ai_generation_score: "Sampled-frame AI likelihood",
   video_ai_generation_score: "Video AI-generated likelihood",
   metadata_score: "Metadata availability (not authenticity)",
@@ -67,7 +67,7 @@ const EVIDENCE_LABELS: Record<string, string> = {
   source_score: "Source context",
   provenance_score: "Verifiable provenance",
   web_corroboration_score: "Web corroboration",
-  overall_risk_score: "Overall verification risk"
+  overall_risk_score: "Legacy context risk (not verdict)"
 };
 
 function evidenceLabel(value: string): string {
@@ -127,7 +127,7 @@ function sourceMatchFrom(result: AnalysisResult): SourceMatch | null {
 
 function detectorSummary(detector: DetectorResult): string {
   if (typeof detector.synthetic_probability === "number") {
-    return `${percent(detector.synthetic_probability)} synthetic likelihood`;
+    return `${percent(detector.synthetic_probability)} AI-class score`;
   }
   if (typeof detector.score === "number") return score(detector.score);
   return readableStatus(detector.status);
@@ -154,7 +154,7 @@ function learnedDetectorAvailable(result: AnalysisResult): boolean {
   }));
 }
 
-function aiGenerationLikelihood(result: AnalysisResult): number | null {
+function aiDetectorScore(result: AnalysisResult): number | null {
   const evidenceKeys = result.content_type === "video"
     ? ["video_ai_generation_score", "sampled_frame_ai_generation_score", "ai_generation_score"]
     : ["ai_generation_score"];
@@ -179,15 +179,18 @@ function generationVerdict(likelihood: number | null, learnedAvailable: boolean)
       detail: "Fallback estimate only — do not treat this as a reliable real-versus-AI verdict"
     };
   }
-  if (likelihood === null) return { headline: "No AI verdict", detail: "The detector returned no usable probability" };
-  if (likelihood >= 85) return { headline: "Very likely AI-generated", detail: "Strong learned-model signal" };
-  if (likelihood >= 70) return { headline: "Likely AI-generated", detail: "Learned-model signal" };
+  if (likelihood === null) return { headline: "No AI verdict", detail: "The detector returned no valid score" };
+  if (likelihood >= 90) return { headline: "Likely AI-generated", detail: "Strong video detector signal" };
+  if (likelihood >= 70) return { headline: "Inconclusive / uncertain", detail: "Detector evidence is not strong enough for an accusation" };
   if (likelihood > 30) return { headline: "Mixed AI signals", detail: "The learned model is uncertain" };
   if (likelihood <= 15) return { headline: "Likely camera-made", detail: "Low learned-model AI signal" };
   return { headline: "Lower AI signal", detail: "The learned model leans away from AI generation" };
 }
 
-function generationRiskClass(likelihood: number | null, learnedAvailable: boolean): string {
+function generationRiskClass(result: AnalysisResult, likelihood: number | null, learnedAvailable: boolean): string {
+  if (result.assessment?.verdict === "likely_authentic") return "risk-trust";
+  if (result.assessment?.verdict === "likely_ai_generated_or_manipulated") return "risk-high";
+  if (result.assessment?.verdict === "inconclusive") return "risk-medium";
   if (!learnedAvailable || likelihood === null) return "risk-low";
   if (likelihood >= 70) return "risk-high";
   if (likelihood > 30) return "risk-medium";
@@ -273,6 +276,21 @@ function TechnicalEvidence({ result }: { result: AnalysisResult }) {
         </dl>
       </section>
 
+      {result.assessment?.signals?.length ? (
+        <section className="technical-group">
+          <h3>Decision signals</h3>
+          <div className="detector-list">
+            {result.assessment.signals.map((signal) => (
+              <div className="detector-row" key={signal.source}>
+                <div><strong>{formatLabel(signal.source)}</strong><span>{readableStatus(signal.signal)}</span></div>
+                <span>{readableStatus(signal.status)}</span>
+                <span>{typeof signal.raw_score === "number" ? `raw ${signal.raw_score.toFixed(3)}` : `reliability ${percent(signal.reliability)}`}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {result.custom_feedback ? (
         <section className="technical-group">
           <h3>Analysis notes</h3>
@@ -289,7 +307,7 @@ function TechnicalEvidence({ result }: { result: AnalysisResult }) {
           <h3>Pixel forensics</h3>
           <dl className="metric-list metric-list-compact">
             <div><dt>Forensic score</dt><dd>{score(forensic.score)}</dd></div>
-            <div><dt>Synthetic artifacts</dt><dd>{percent(forensic.synthetic_artifact_probability)}</dd></div>
+            <div><dt>Handcrafted artifact score</dt><dd>{percent(forensic.synthetic_artifact_probability)}</dd></div>
             <div><dt>Manipulation probability</dt><dd>{percent(forensic.manipulation_probability)}</dd></div>
             {forensic.caption_overlay?.is_likely ? (
               <div>
@@ -332,7 +350,7 @@ function TechnicalEvidence({ result }: { result: AnalysisResult }) {
       ) : null}
 
       <section className="technical-group">
-        <h3>Detector opinions</h3>
+        <h3>Detector outputs</h3>
         {result.detectors?.length ? (
           <div className="detector-list">
             {result.detectors.map((detector, index) => (
@@ -343,7 +361,7 @@ function TechnicalEvidence({ result }: { result: AnalysisResult }) {
               </div>
             ))}
           </div>
-        ) : <p className="technical-empty">No detector opinions were returned.</p>}
+        ) : <p className="technical-empty">No detector outputs were returned.</p>}
       </section>
 
       <section className="technical-group">
@@ -392,12 +410,19 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
   { result, completedAt, onNewAnalysis },
   ref
 ) {
-  const evidenceEntries = Object.entries(result.evidence ?? {});
-  const generationLikelihood = aiGenerationLikelihood(result);
+  const evidenceEntries = Object.entries(result.evidence ?? {}).filter(
+    ([key]) => !result.assessment || key !== "overall_risk_score"
+  );
+  const generationLikelihood = aiDetectorScore(result);
   const learnedAvailable = learnedDetectorAvailable(result);
   const generationResult = generationVerdict(generationLikelihood, learnedAvailable);
+  const assessment = result.assessment ?? null;
+  const headline = assessment?.label ?? generationResult.headline;
+  const verdictDetail = assessment
+    ? `${formatLabel(assessment.confidence)} decision confidence · three-way evidence assessment`
+    : generationResult.detail;
   const technicalPreview = [
-    generationLikelihood !== null ? `${Math.round(generationLikelihood)}% AI likelihood` : null,
+    generationLikelihood !== null ? `${Math.round(generationLikelihood)}% raw AI-class score` : null,
     learnedAvailable ? "learned detector active" : "fallback only",
     typeof result.frames_analyzed === "number" ? `${result.frames_analyzed.toLocaleString()} frames` : null,
     result.suspicious_frames?.length ? `${result.suspicious_frames.length} suspicious samples` : null,
@@ -415,7 +440,7 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
     <section
       ref={ref}
       id="report"
-      className={`analysis-report ${generationRiskClass(generationLikelihood, learnedAvailable)}`}
+      className={`analysis-report ${generationRiskClass(result, generationLikelihood, learnedAvailable)}`}
       aria-labelledby="report-heading"
       tabIndex={-1}
     >
@@ -426,23 +451,22 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
 
       <div className="score-summary">
         <div className="score-block">
-          <span>AI-generated likelihood</span>
-          <div className="score-number">
-            <strong>{generationLikelihood === null ? "—" : Math.round(generationLikelihood)}</strong>
-            {generationLikelihood === null ? null : <span>%</span>}
+          <span>{assessment ? "Decision confidence" : "AI detector score"}</span>
+          <div className={`score-number${assessment ? " decision-word" : ""}`}>
+            <strong>{assessment ? formatLabel(assessment.confidence) : (generationLikelihood === null ? "—" : Math.round(generationLikelihood))}</strong>
+            {assessment || generationLikelihood === null ? null : <span>%</span>}
           </div>
-          <small>{learnedAvailable ? "Learned detector" : "Heuristic fallback"}</small>
+          <small>{assessment ? "Not a probability" : (learnedAvailable ? "Raw model score" : "Heuristic fallback")}</small>
         </div>
         <div className="verdict-block">
-          <h1 id="report-heading">{generationResult.headline}</h1>
-          <p className="verdict">{generationResult.detail}</p>
-          <p className="report-summary">
-            Separate verification context score: {Math.round(result.truth_score)}/100. {result.summary}
-          </p>
+          <h1 id="report-heading">{headline}</h1>
+          <p className="verdict">{verdictDetail}</p>
+          <p className="report-summary">{assessment?.reason ?? result.summary}</p>
         </div>
       </div>
 
-      <ReportSection index="01" title="Key evidence">
+      <ReportSection index="01" title="Verdict basis">
+        {assessment ? <p className="assessment-reason">{assessment.reason}</p> : null}
         {evidenceEntries.length ? (
           <dl className="evidence-list">
             {evidenceEntries.map(([key, rawValue]) => (
@@ -458,15 +482,28 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
         ) : null}
       </ReportSection>
 
-      <ReportSection index="02" title="Warning signs" tone="warning-section">
-        <FindingList items={result.warnings} emptyMessage="No strong warning signs were returned." />
+      <ReportSection index="02" title="Evidence supporting authenticity" tone="positive-section">
+        <FindingList
+          items={assessment?.evidence_supporting_authenticity ?? result.positive_signals}
+          emptyMessage="No strong authenticity evidence was available. This does not count against the image."
+        />
       </ReportSection>
 
-      <ReportSection index="03" title="Other technical signals">
-        <FindingList items={result.positive_signals} emptyMessage="No additional technical signals were returned." />
+      <ReportSection index="03" title="Evidence raising concern" tone="warning-section">
+        <FindingList
+          items={assessment?.evidence_raising_concern ?? result.warnings}
+          emptyMessage="No independent positive evidence of AI generation or manipulation was found."
+        />
       </ReportSection>
 
-      <ReportSection index="04" title="Safety recommendation">
+      <ReportSection index="04" title="Important limitations">
+        <FindingList
+          items={assessment?.limitations ?? [result.disclaimer]}
+          emptyMessage="No additional limitations were returned."
+        />
+      </ReportSection>
+
+      <ReportSection index="05" title="Safety recommendation">
         {result.recommendations.length ? (
           <div className="recommendation-copy">
             <p>{result.recommendations[0]}</p>
@@ -481,7 +518,7 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
 
       <details className="technical-evidence">
         <summary>
-          <span className="technical-summary-heading"><span className="section-number" aria-hidden="true">05</span><span>Technical evidence</span></span>
+          <span className="technical-summary-heading"><span className="section-number" aria-hidden="true">06</span><span>Technical evidence</span></span>
           <span className="technical-preview">{technicalPreview.length ? technicalPreview.join(" · ") : "Forensics · provenance · research"}</span>
           <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m5 8 5 5 5-5" /></svg>
         </summary>

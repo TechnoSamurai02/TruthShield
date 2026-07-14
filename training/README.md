@@ -119,7 +119,7 @@ Run a full independent report for an already-trained model:
 .\backend\venv\Scripts\python.exe .\training\evaluate_image_detector.py --model-dir .\training\models\truthshield-image-detector-v2 --split test --batch-size 16
 ```
 
-The report includes accuracy, balanced accuracy, macro F1, per-class precision/recall, false AI alarms, missed AI images, ROC AUC, calibration error, and example mistakes.
+The report includes accuracy, balanced accuracy, macro F1, per-class precision/recall, false AI alarms, missed AI images, ROC AUC, calibration error, the former 0.70 frontend rule, conservative three-way decisions, inconclusive coverage, and example mistakes. See `training/evaluation/README.md` for the balanced decision-level workflow.
 
 Check a known AI image across JPEG compression, resizing, cropping, and a social-media-style resize/recompression:
 

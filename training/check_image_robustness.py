@@ -18,17 +18,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("images", nargs="+", help="One or more image paths to check.")
     parser.add_argument("--model-dir", default="training/models/truthshield-image-detector-v2")
     parser.add_argument(
+        "--expected",
+        choices=("ai", "authentic"),
+        default="ai",
+        help="Expected three-way outcome for all supplied source images (default: ai).",
+    )
+    parser.add_argument(
         "--minimum-ai-probability",
         type=float,
-        default=0.70,
-        help="Minimum acceptable AI probability for every variant (default: 0.70).",
+        default=None,
+        help="Deprecated compatibility alias for --ai-min.",
     )
+    parser.add_argument("--ai-min", type=float, default=0.95)
+    parser.add_argument("--authentic-max", type=float, default=0.15)
     parser.add_argument("--output", default="", help="Optional JSON report path.")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.minimum_ai_probability is not None:
+        args.ai_min = args.minimum_ai_probability
     repo_root = Path(__file__).resolve().parents[1]
     backend_dir = repo_root / "backend"
     sys.path.insert(0, str(backend_dir))
@@ -64,8 +74,17 @@ def main() -> None:
         for (variant_name, variant), raw_output in zip(variants, outputs):
             normalized = _normalize_outputs(raw_output)
             probability = _synthetic_probability(normalized)
-            probabilities.append(probability)
-            passed = probability >= args.minimum_ai_probability
+            if probability is None:
+                verdict = "unavailable"
+            elif probability >= args.ai_min:
+                verdict = "ai"
+            elif probability <= args.authentic_max:
+                verdict = "authentic"
+            else:
+                verdict = "inconclusive"
+            if probability is not None:
+                probabilities.append(probability)
+            passed = verdict == args.expected
             if not passed:
                 failed_variants.append(f"{image_path.name}:{variant_name}")
             variant_reports.append(
@@ -73,7 +92,8 @@ def main() -> None:
                     "variant": variant_name,
                     "width": variant.width,
                     "height": variant.height,
-                    "ai_probability": round(probability, 6),
+                    "ai_class_score": round(probability, 6) if probability is not None else None,
+                    "verdict": verdict,
                     "passed": passed,
                     "top_labels": normalized[:3],
                 }
@@ -83,9 +103,9 @@ def main() -> None:
             {
                 "image": str(image_path),
                 "variant_count": len(variant_reports),
-                "minimum_ai_probability": round(min(probabilities), 6),
-                "mean_ai_probability": round(statistics.fmean(probabilities), 6),
-                "median_ai_probability": round(statistics.median(probabilities), 6),
+                "minimum_ai_class_score": round(min(probabilities), 6) if probabilities else None,
+                "mean_ai_class_score": round(statistics.fmean(probabilities), 6) if probabilities else None,
+                "median_ai_class_score": round(statistics.median(probabilities), 6) if probabilities else None,
                 "all_variants_passed": all(item["passed"] for item in variant_reports),
                 "variants": variant_reports,
             }
@@ -93,7 +113,8 @@ def main() -> None:
 
     report = {
         "model_dir": str(model_dir),
-        "acceptance_threshold": args.minimum_ai_probability,
+        "expected": args.expected,
+        "decision_thresholds": {"authentic_max": args.authentic_max, "ai_min": args.ai_min},
         "all_variants_passed": not failed_variants,
         "failed_variants": failed_variants,
         "images": reports,

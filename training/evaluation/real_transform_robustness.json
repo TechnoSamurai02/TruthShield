@@ -1,0 +1,976 @@
+{
+  "all_variants_passed": false,
+  "decision_thresholds": {
+    "ai_min": 0.95,
+    "authentic_max": 0.15
+  },
+  "expected": "authentic",
+  "failed_variants": [
+    "test_real_camera_000000.jpg:original",
+    "test_real_camera_000000.jpg:jpeg_quality_95",
+    "test_real_camera_000000.jpg:jpeg_quality_75",
+    "test_real_camera_000000.jpg:jpeg_quality_50",
+    "test_real_camera_000000.jpg:resize_75pct",
+    "test_real_camera_000000.jpg:resize_50pct",
+    "test_real_camera_000000.jpg:center_crop_85pct",
+    "test_real_camera_000000.jpg:social_resize_jpeg_70",
+    "test_real_camera_000500.jpg:original",
+    "test_real_camera_000500.jpg:jpeg_quality_95",
+    "test_real_camera_000500.jpg:jpeg_quality_75",
+    "test_real_camera_000500.jpg:jpeg_quality_50",
+    "test_real_camera_000500.jpg:resize_75pct",
+    "test_real_camera_000500.jpg:resize_50pct",
+    "test_real_camera_000500.jpg:center_crop_85pct",
+    "test_real_camera_000500.jpg:social_resize_jpeg_70",
+    "test_real_camera_001000.jpg:original",
+    "test_real_camera_001000.jpg:jpeg_quality_95",
+    "test_real_camera_001000.jpg:jpeg_quality_75",
+    "test_real_camera_001000.jpg:jpeg_quality_50",
+    "test_real_camera_001000.jpg:resize_75pct",
+    "test_real_camera_001000.jpg:resize_50pct",
+    "test_real_camera_001000.jpg:center_crop_85pct",
+    "test_real_camera_001000.jpg:social_resize_jpeg_70",
+    "test_real_camera_001500.jpg:resize_50pct",
+    "test_real_camera_001500.jpg:center_crop_85pct",
+    "test_real_camera_002000.jpg:original",
+    "test_real_camera_002000.jpg:jpeg_quality_95",
+    "test_real_camera_002000.jpg:jpeg_quality_75",
+    "test_real_camera_002000.jpg:jpeg_quality_50",
+    "test_real_camera_002000.jpg:resize_75pct",
+    "test_real_camera_002000.jpg:resize_50pct",
+    "test_real_camera_002000.jpg:social_resize_jpeg_70"
+  ],
+  "images": [
+    {
+      "all_variants_passed": false,
+      "image": "C:\\Users\\rishi\\OneDrive\\Desktop\\Hackathon Project\\truthshield-ai\\training\\data\\defactify_sample\\test\\real_camera\\test_real_camera_000000.jpg",
+      "mean_ai_class_score": 0.205479,
+      "median_ai_class_score": 0.201464,
+      "minimum_ai_class_score": 0.192006,
+      "variant_count": 8,
+      "variants": [
+        {
+          "ai_class_score": 0.194352,
+          "height": 640,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.703552782535553
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.19435177743434906
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.10209551453590393
+            }
+          ],
+          "variant": "original",
+          "verdict": "inconclusive",
+          "width": 427
+        },
+        {
+          "ai_class_score": 0.192747,
+          "height": 640,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.7053378224372864
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.19274687767028809
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.10191527009010315
+            }
+          ],
+          "variant": "jpeg_quality_95",
+          "verdict": "inconclusive",
+          "width": 427
+        },
+        {
+          "ai_class_score": 0.192006,
+          "height": 640,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.703121542930603
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.19200633466243744
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.10487210005521774
+            }
+          ],
+          "variant": "jpeg_quality_75",
+          "verdict": "inconclusive",
+          "width": 427
+        },
+        {
+          "ai_class_score": 0.213793,
+          "height": 640,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.6746377348899841
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.21379296481609344
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.11156931519508362
+            }
+          ],
+          "variant": "jpeg_quality_50",
+          "verdict": "inconclusive",
+          "width": 427
+        },
+        {
+          "ai_class_score": 0.216537,
+          "height": 480,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.679414689540863
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.21653687953948975
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.10404842346906662
+            }
+          ],
+          "variant": "resize_75pct",
+          "verdict": "inconclusive",
+          "width": 320
+        },
+        {
+          "ai_class_score": 0.231467,
+          "height": 320,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.6641159653663635
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.23146721720695496
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.10441679507493973
+            }
+          ],
+          "variant": "resize_50pct",
+          "verdict": "inconclusive",
+          "width": 214
+        },
+        {
+          "ai_class_score": 0.206136,
+          "height": 544,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.6621838808059692
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.20613642036914825
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.1316796839237213
+            }
+          ],
+          "variant": "center_crop_85pct",
+          "verdict": "inconclusive",
+          "width": 363
+        },
+        {
+          "ai_class_score": 0.196792,
+          "height": 352,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.667202889919281
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.19679225981235504
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.13600482046604156
+            }
+          ],
+          "variant": "social_resize_jpeg_70",
+          "verdict": "inconclusive",
+          "width": 235
+        }
+      ]
+    },
+    {
+      "all_variants_passed": false,
+      "image": "C:\\Users\\rishi\\OneDrive\\Desktop\\Hackathon Project\\truthshield-ai\\training\\data\\defactify_sample\\test\\real_camera\\test_real_camera_000500.jpg",
+      "mean_ai_class_score": 0.69582,
+      "median_ai_class_score": 0.710685,
+      "minimum_ai_class_score": 0.402097,
+      "variant_count": 8,
+      "variants": [
+        {
+          "ai_class_score": 0.714695,
+          "height": 427,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.714695155620575
+            },
+            {
+              "label": "real_camera",
+              "score": 0.22786948084831238
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.0574353002011776
+            }
+          ],
+          "variant": "original",
+          "verdict": "inconclusive",
+          "width": 640
+        },
+        {
+          "ai_class_score": 0.696696,
+          "height": 427,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.6966963410377502
+            },
+            {
+              "label": "real_camera",
+              "score": 0.2420061230659485
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.061297543346881866
+            }
+          ],
+          "variant": "jpeg_quality_95",
+          "verdict": "inconclusive",
+          "width": 640
+        },
+        {
+          "ai_class_score": 0.68972,
+          "height": 427,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.6897201538085938
+            },
+            {
+              "label": "real_camera",
+              "score": 0.24589811265468597
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.06438170373439789
+            }
+          ],
+          "variant": "jpeg_quality_75",
+          "verdict": "inconclusive",
+          "width": 640
+        },
+        {
+          "ai_class_score": 0.402097,
+          "height": 427,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.5037357211112976
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.4020971655845642
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.09416710585355759
+            }
+          ],
+          "variant": "jpeg_quality_50",
+          "verdict": "inconclusive",
+          "width": 640
+        },
+        {
+          "ai_class_score": 0.706676,
+          "height": 320,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.7066755890846252
+            },
+            {
+              "label": "real_camera",
+              "score": 0.23356498777866364
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.0597594752907753
+            }
+          ],
+          "variant": "resize_75pct",
+          "verdict": "inconclusive",
+          "width": 480
+        },
+        {
+          "ai_class_score": 0.860324,
+          "height": 214,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.860324501991272
+            },
+            {
+              "label": "real_camera",
+              "score": 0.10459840297698975
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.03507710248231888
+            }
+          ],
+          "variant": "resize_50pct",
+          "verdict": "inconclusive",
+          "width": 320
+        },
+        {
+          "ai_class_score": 0.74545,
+          "height": 363,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.7454501986503601
+            },
+            {
+              "label": "real_camera",
+              "score": 0.2145468294620514
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.0400029718875885
+            }
+          ],
+          "variant": "center_crop_85pct",
+          "verdict": "inconclusive",
+          "width": 544
+        },
+        {
+          "ai_class_score": 0.7509,
+          "height": 235,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.7509002685546875
+            },
+            {
+              "label": "real_camera",
+              "score": 0.1957971453666687
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.053302664309740067
+            }
+          ],
+          "variant": "social_resize_jpeg_70",
+          "verdict": "inconclusive",
+          "width": 352
+        }
+      ]
+    },
+    {
+      "all_variants_passed": false,
+      "image": "C:\\Users\\rishi\\OneDrive\\Desktop\\Hackathon Project\\truthshield-ai\\training\\data\\defactify_sample\\test\\real_camera\\test_real_camera_001000.jpg",
+      "mean_ai_class_score": 0.818825,
+      "median_ai_class_score": 0.835945,
+      "minimum_ai_class_score": 0.62991,
+      "variant_count": 8,
+      "variants": [
+        {
+          "ai_class_score": 0.823572,
+          "height": 435,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.8235721588134766
+            },
+            {
+              "label": "real_camera",
+              "score": 0.15680481493473053
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.019623061642050743
+            }
+          ],
+          "variant": "original",
+          "verdict": "inconclusive",
+          "width": 640
+        },
+        {
+          "ai_class_score": 0.84854,
+          "height": 435,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.8485404253005981
+            },
+            {
+              "label": "real_camera",
+              "score": 0.13406401872634888
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.0173955075442791
+            }
+          ],
+          "variant": "jpeg_quality_95",
+          "verdict": "inconclusive",
+          "width": 640
+        },
+        {
+          "ai_class_score": 0.824036,
+          "height": 435,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.8240364789962769
+            },
+            {
+              "label": "real_camera",
+              "score": 0.15754465758800507
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.018418865278363228
+            }
+          ],
+          "variant": "jpeg_quality_75",
+          "verdict": "inconclusive",
+          "width": 640
+        },
+        {
+          "ai_class_score": 0.62991,
+          "height": 435,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.629910409450531
+            },
+            {
+              "label": "real_camera",
+              "score": 0.31041237711906433
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.059677302837371826
+            }
+          ],
+          "variant": "jpeg_quality_50",
+          "verdict": "inconclusive",
+          "width": 640
+        },
+        {
+          "ai_class_score": 0.847853,
+          "height": 326,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.8478533625602722
+            },
+            {
+              "label": "real_camera",
+              "score": 0.13269074261188507
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.019455885514616966
+            }
+          ],
+          "variant": "resize_75pct",
+          "verdict": "inconclusive",
+          "width": 480
+        },
+        {
+          "ai_class_score": 0.942506,
+          "height": 218,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.9425061345100403
+            },
+            {
+              "label": "real_camera",
+              "score": 0.04683203995227814
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.010661827400326729
+            }
+          ],
+          "variant": "resize_50pct",
+          "verdict": "inconclusive",
+          "width": 320
+        },
+        {
+          "ai_class_score": 0.69118,
+          "height": 370,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.6911801695823669
+            },
+            {
+              "label": "real_camera",
+              "score": 0.2583968937397003
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.05042291805148125
+            }
+          ],
+          "variant": "center_crop_85pct",
+          "verdict": "inconclusive",
+          "width": 544
+        },
+        {
+          "ai_class_score": 0.943002,
+          "height": 239,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.9430021643638611
+            },
+            {
+              "label": "real_camera",
+              "score": 0.047120917588472366
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.009876852855086327
+            }
+          ],
+          "variant": "social_resize_jpeg_70",
+          "verdict": "inconclusive",
+          "width": 352
+        }
+      ]
+    },
+    {
+      "all_variants_passed": false,
+      "image": "C:\\Users\\rishi\\OneDrive\\Desktop\\Hackathon Project\\truthshield-ai\\training\\data\\defactify_sample\\test\\real_camera\\test_real_camera_001500.jpg",
+      "mean_ai_class_score": 0.140388,
+      "median_ai_class_score": 0.141575,
+      "minimum_ai_class_score": 0.097419,
+      "variant_count": 8,
+      "variants": [
+        {
+          "ai_class_score": 0.139563,
+          "height": 640,
+          "passed": true,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.780307948589325
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.13956326246261597
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.08012877404689789
+            }
+          ],
+          "variant": "original",
+          "verdict": "authentic",
+          "width": 427
+        },
+        {
+          "ai_class_score": 0.138874,
+          "height": 640,
+          "passed": true,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.7758559584617615
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.13887403905391693
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.0852699726819992
+            }
+          ],
+          "variant": "jpeg_quality_95",
+          "verdict": "authentic",
+          "width": 427
+        },
+        {
+          "ai_class_score": 0.147287,
+          "height": 640,
+          "passed": true,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.7652574777603149
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.14728717505931854
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.08745533972978592
+            }
+          ],
+          "variant": "jpeg_quality_75",
+          "verdict": "authentic",
+          "width": 427
+        },
+        {
+          "ai_class_score": 0.097419,
+          "height": 640,
+          "passed": true,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.8197123408317566
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.09741862863302231
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.08286912739276886
+            }
+          ],
+          "variant": "jpeg_quality_50",
+          "verdict": "authentic",
+          "width": 427
+        },
+        {
+          "ai_class_score": 0.143586,
+          "height": 480,
+          "passed": true,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.7721530199050903
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.1435864269733429
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.08426053822040558
+            }
+          ],
+          "variant": "resize_75pct",
+          "verdict": "authentic",
+          "width": 320
+        },
+        {
+          "ai_class_score": 0.178473,
+          "height": 320,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.7200291752815247
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.17847341299057007
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.1014973372220993
+            }
+          ],
+          "variant": "resize_50pct",
+          "verdict": "inconclusive",
+          "width": 214
+        },
+        {
+          "ai_class_score": 0.160641,
+          "height": 544,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.719077467918396
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.16064074635505676
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.12028177827596664
+            }
+          ],
+          "variant": "center_crop_85pct",
+          "verdict": "inconclusive",
+          "width": 363
+        },
+        {
+          "ai_class_score": 0.11726,
+          "height": 352,
+          "passed": true,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.7967901825904846
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.11726028472185135
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.08594956248998642
+            }
+          ],
+          "variant": "social_resize_jpeg_70",
+          "verdict": "authentic",
+          "width": 235
+        }
+      ]
+    },
+    {
+      "all_variants_passed": false,
+      "image": "C:\\Users\\rishi\\OneDrive\\Desktop\\Hackathon Project\\truthshield-ai\\training\\data\\defactify_sample\\test\\real_camera\\test_real_camera_002000.jpg",
+      "mean_ai_class_score": 0.324164,
+      "median_ai_class_score": 0.226807,
+      "minimum_ai_class_score": 0.08622,
+      "variant_count": 8,
+      "variants": [
+        {
+          "ai_class_score": 0.231333,
+          "height": 427,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.706830620765686
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.23133261501789093
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.061836834996938705
+            }
+          ],
+          "variant": "original",
+          "verdict": "inconclusive",
+          "width": 640
+        },
+        {
+          "ai_class_score": 0.211176,
+          "height": 427,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.7281808257102966
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.21117615699768066
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.060643065720796585
+            }
+          ],
+          "variant": "jpeg_quality_95",
+          "verdict": "inconclusive",
+          "width": 640
+        },
+        {
+          "ai_class_score": 0.232516,
+          "height": 427,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.7104368209838867
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.23251557350158691
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.057047661393880844
+            }
+          ],
+          "variant": "jpeg_quality_75",
+          "verdict": "inconclusive",
+          "width": 640
+        },
+        {
+          "ai_class_score": 0.155436,
+          "height": 427,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.7798590064048767
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.15543638169765472
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.06470467150211334
+            }
+          ],
+          "variant": "jpeg_quality_50",
+          "verdict": "inconclusive",
+          "width": 640
+        },
+        {
+          "ai_class_score": 0.222281,
+          "height": 320,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.714189887046814
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.22228142619132996
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.06352865695953369
+            }
+          ],
+          "variant": "resize_75pct",
+          "verdict": "inconclusive",
+          "width": 480
+        },
+        {
+          "ai_class_score": 0.738681,
+          "height": 214,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.7386808395385742
+            },
+            {
+              "label": "real_camera",
+              "score": 0.22133374214172363
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.03998546302318573
+            }
+          ],
+          "variant": "resize_50pct",
+          "verdict": "inconclusive",
+          "width": 320
+        },
+        {
+          "ai_class_score": 0.08622,
+          "height": 363,
+          "passed": true,
+          "top_labels": [
+            {
+              "label": "real_camera",
+              "score": 0.8548735976219177
+            },
+            {
+              "label": "ai_generated",
+              "score": 0.08621998131275177
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.05890636891126633
+            }
+          ],
+          "variant": "center_crop_85pct",
+          "verdict": "authentic",
+          "width": 544
+        },
+        {
+          "ai_class_score": 0.715672,
+          "height": 235,
+          "passed": false,
+          "top_labels": [
+            {
+              "label": "ai_generated",
+              "score": 0.7156716585159302
+            },
+            {
+              "label": "real_camera",
+              "score": 0.22711554169654846
+            },
+            {
+              "label": "real_edited_or_captioned",
+              "score": 0.05721277371048927
+            }
+          ],
+          "variant": "social_resize_jpeg_70",
+          "verdict": "inconclusive",
+          "width": 352
+        }
+      ]
+    }
+  ],
+  "model_dir": "C:\\Users\\rishi\\OneDrive\\Desktop\\Hackathon Project\\truthshield-ai\\training\\models\\truthshield-image-detector-v2"
+}

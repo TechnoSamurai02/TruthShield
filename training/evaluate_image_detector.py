@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -10,6 +11,10 @@ from PIL import Image
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "backend"))
+
+from analyzers.image_decision import AI_DETECTOR_MIN, AUTHENTIC_DETECTOR_MAX  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -19,6 +24,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", default="test")
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--max-samples", type=int, default=0)
+    parser.add_argument(
+        "--max-per-class",
+        type=int,
+        default=0,
+        help="Deterministically sample at most this many images from each class (preferred for balanced reports).",
+    )
+    parser.add_argument("--max-misclassified", type=int, default=40)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output", default="")
     parser.add_argument("--audit-report", default="training/data/image_dataset_audit.json")
@@ -52,6 +64,8 @@ def main() -> None:
             split=args.split,
             audit_path=Path(args.audit_report),
         )
+    if args.max_per_class > 0:
+        samples = _sample_per_class(samples, max_per_class=args.max_per_class, seed=args.seed)
     if args.max_samples > 0 and len(samples) > args.max_samples:
         rng = np.random.default_rng(args.seed)
         chosen = sorted(rng.choice(len(samples), size=args.max_samples, replace=False).tolist())
@@ -79,7 +93,7 @@ def main() -> None:
                 true_labels.append(true_label)
                 predicted_labels.append(int(prediction))
                 probabilities.append([float(value) for value in scores])
-                if int(prediction) != true_label and len(misclassified) < 100:
+                if int(prediction) != true_label and len(misclassified) < max(0, args.max_misclassified):
                     misclassified.append(
                         {
                             "path": str(path),
@@ -110,11 +124,31 @@ def main() -> None:
             "audit_leakage_excluded_count": len(excluded_paths),
             "audit_leakage_excluded_paths": excluded_paths,
             "misclassified_examples": misclassified,
+            "sampling": {
+                "seed": args.seed,
+                "max_samples": args.max_samples,
+                "max_per_class": args.max_per_class,
+            },
         }
     )
     output_path = Path(args.output) if args.output else model_dir / f"truthshield_{args.split}_report.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
-    print(json.dumps({key: report[key] for key in ("accuracy", "balanced_accuracy", "macro_f1", "binary_ai_detection")}, indent=2))
+    print(
+        json.dumps(
+            {
+                key: report[key]
+                for key in (
+                    "accuracy",
+                    "balanced_accuracy",
+                    "macro_f1",
+                    "legacy_frontend_likely_ai_decision",
+                    "three_way_detection",
+                )
+            },
+            indent=2,
+        )
+    )
     print(f"Full report: {output_path.resolve()}", flush=True)
 
 
@@ -129,6 +163,23 @@ def _collect_samples(split_dir: Path, label2id: Dict[str, int]) -> List[tuple[Pa
             if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS:
                 samples.append((path, label_id))
     return samples
+
+
+def _sample_per_class(
+    samples: List[tuple[Path, int]],
+    max_per_class: int,
+    seed: int,
+) -> List[tuple[Path, int]]:
+    rng = np.random.default_rng(seed)
+    selected: List[tuple[Path, int]] = []
+    labels = sorted({label for _, label in samples})
+    for label in labels:
+        members = [sample for sample in samples if sample[1] == label]
+        if len(members) > max_per_class:
+            indices = sorted(rng.choice(len(members), size=max_per_class, replace=False).tolist())
+            members = [members[index] for index in indices]
+        selected.extend(members)
+    return selected
 
 
 def _exclude_audit_leakage(
@@ -233,6 +284,21 @@ def build_report(
                 "missed_ai": false_negative,
             },
         }
+        legacy = _likely_ai_threshold_metrics(ai_truth, ai_scores, threshold=0.70)
+        three_way = _three_way_metrics(
+            ai_truth,
+            ai_scores,
+            authentic_max=AUTHENTIC_DETECTOR_MAX,
+            ai_min=AI_DETECTOR_MIN,
+        )
+        threshold_analysis = [
+            _likely_ai_threshold_metrics(ai_truth, ai_scores, threshold=threshold)
+            for threshold in (0.50, 0.70, 0.80, 0.85, 0.90, 0.95)
+        ]
+    else:
+        legacy = {"available": False}
+        three_way = {"available": False}
+        threshold_analysis = []
 
     return {
         "accuracy": round(float(np.mean(predictions == true_labels)), 6),
@@ -242,6 +308,72 @@ def build_report(
         "labels": [id2label[index] for index in label_ids],
         "confusion_matrix_rows_expected_columns_predicted": confusion.tolist(),
         "binary_ai_detection": binary,
+        "legacy_frontend_likely_ai_decision": legacy,
+        "three_way_detection": three_way,
+        "likely_ai_threshold_analysis": threshold_analysis,
+    }
+
+
+def _likely_ai_threshold_metrics(ai_truth: np.ndarray, scores: np.ndarray, threshold: float) -> Dict[str, Any]:
+    predicted_ai = scores >= threshold
+    true_ai = int(np.sum(predicted_ai & ai_truth))
+    false_ai = int(np.sum(predicted_ai & ~ai_truth))
+    ai_count = int(np.sum(ai_truth))
+    non_ai_count = int(np.sum(~ai_truth))
+    return {
+        "available": True,
+        "threshold": threshold,
+        "true_ai": true_ai,
+        "false_ai_alarm": false_ai,
+        "ai_count": ai_count,
+        "non_ai_count": non_ai_count,
+        "ai_recall": round(true_ai / max(1, ai_count), 6),
+        "false_positive_rate": round(false_ai / max(1, non_ai_count), 6),
+        "precision": round(true_ai / max(1, true_ai + false_ai), 6),
+    }
+
+
+def _three_way_metrics(
+    ai_truth: np.ndarray,
+    scores: np.ndarray,
+    authentic_max: float,
+    ai_min: float,
+) -> Dict[str, Any]:
+    likely_ai = scores >= ai_min
+    likely_authentic = scores <= authentic_max
+    inconclusive = ~(likely_ai | likely_authentic)
+    ai_count = int(np.sum(ai_truth))
+    non_ai_count = int(np.sum(~ai_truth))
+    true_ai = int(np.sum(likely_ai & ai_truth))
+    false_ai = int(np.sum(likely_ai & ~ai_truth))
+    true_authentic = int(np.sum(likely_authentic & ~ai_truth))
+    ai_mislabeled_authentic = int(np.sum(likely_authentic & ai_truth))
+    decisive = int(np.sum(likely_ai | likely_authentic))
+    decisive_correct = true_ai + true_authentic
+    return {
+        "available": True,
+        "authentic_max": authentic_max,
+        "ai_min": ai_min,
+        "counts": {
+            "likely_ai": int(np.sum(likely_ai)),
+            "likely_authentic": int(np.sum(likely_authentic)),
+            "inconclusive": int(np.sum(inconclusive)),
+            "true_ai": true_ai,
+            "false_ai_alarm": false_ai,
+            "true_authentic": true_authentic,
+            "ai_mislabeled_authentic": ai_mislabeled_authentic,
+            "ai_inconclusive": int(np.sum(inconclusive & ai_truth)),
+            "non_ai_inconclusive": int(np.sum(inconclusive & ~ai_truth)),
+        },
+        "false_positive_rate": round(false_ai / max(1, non_ai_count), 6),
+        "false_negative_rate_as_authentic": round(ai_mislabeled_authentic / max(1, ai_count), 6),
+        "ai_recall": round(true_ai / max(1, ai_count), 6),
+        "authentic_recall": round(true_authentic / max(1, non_ai_count), 6),
+        "inconclusive_rate": round(float(np.mean(inconclusive)), 6),
+        "decisive_coverage": round(decisive / max(1, len(ai_truth)), 6),
+        "decisive_accuracy": round(decisive_correct / max(1, decisive), 6),
+        "likely_ai_precision": round(true_ai / max(1, true_ai + false_ai), 6),
+        "likely_authentic_precision": round(true_authentic / max(1, true_authentic + ai_mislabeled_authentic), 6),
     }
 
 

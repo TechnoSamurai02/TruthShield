@@ -100,7 +100,8 @@ Open the deployed frontend and run:
 
 - Image and video analysis with representative test files
 - Image upload with a small `.jpg` or `.png`
-- The supplied Midjourney regression image; the report should show the learned detector active and about 99% AI-generated likelihood
+- A known AI regression image; inspect the three-way verdict and the raw detector score separately
+- A known real street/building photograph; a raw score inside the 0.15–0.95 abstention band must render as `Inconclusive`, not `Likely AI`
 - Health check directly at `/api/health`
 
 If the frontend loads but requests fail, first check:
@@ -109,4 +110,4 @@ If the frontend loads but requests fail, first check:
 - Hugging Face Space build logs
 - Hugging Face Space variable `FRONTEND_ORIGINS`
 - Browser devtools console for CORS or network errors
-- `Technical evidence -> Detector opinions`; if it says only `Local heuristic fallback`, the trained model was not packaged or could not load
+- `Technical evidence -> Detector outputs`; if it says only `Local heuristic fallback`, the trained model was not packaged or could not load and the image verdict must be inconclusive

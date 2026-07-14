@@ -88,10 +88,10 @@ def _detector_note(detectors: List[Dict[str, Any]]) -> str:
         return "No AI detector probability was available."
     probability = max(probabilities)
     if probability >= 0.75:
-        return f"The strongest AI detector signal estimates about {probability:.0%} synthetic likelihood."
+        return f"The strongest detector returned an AI-class score of {probability:.0%}; this is not a real-world probability."
     if probability >= 0.45:
-        return f"The strongest AI detector signal is uncertain at about {probability:.0%} synthetic likelihood."
-    return f"The strongest AI detector signal estimates about {probability:.0%} synthetic likelihood."
+        return f"The strongest detector returned an uncertain AI-class score of {probability:.0%}; this is not proof."
+    return f"The strongest detector returned an AI-class score of {probability:.0%}; this is not a real-world probability."
 
 
 def _source_match_note(web_research: Dict[str, Any] | None) -> str:
