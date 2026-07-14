@@ -1,0 +1,101 @@
+{
+  "audit_leakage_excluded_count": 4,
+  "data_split": "C:\\Users\\rishi\\OneDrive\\Desktop\\Hackathon Project\\truthshield-ai\\training\\data\\defactify_sample\\test",
+  "error_examples": [
+    {
+      "detector_score": 0.1129,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000117.jpg",
+      "reason": "The dedicated detector is below the conservative authentic threshold and no independent positive AI evidence was found.",
+      "verdict": "likely_authentic"
+    },
+    {
+      "detector_score": 0.1466,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000639.jpg",
+      "reason": "The dedicated detector is below the conservative authentic threshold and no independent positive AI evidence was found.",
+      "verdict": "likely_authentic"
+    },
+    {
+      "detector_score": 0.1002,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000977.jpg",
+      "reason": "The dedicated detector is below the conservative authentic threshold and no independent positive AI evidence was found.",
+      "verdict": "likely_authentic"
+    },
+    {
+      "detector_score": 0.0011,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_001635.jpg",
+      "reason": "The dedicated detector is below the conservative authentic threshold and no independent positive AI evidence was found.",
+      "verdict": "likely_authentic"
+    },
+    {
+      "detector_score": 0.0251,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_002561.jpg",
+      "reason": "The dedicated detector is below the conservative authentic threshold and no independent positive AI evidence was found.",
+      "verdict": "likely_authentic"
+    },
+    {
+      "detector_score": 0.9946,
+      "expected": "real_camera",
+      "path": "training\\data\\defactify_sample\\test\\real_camera\\test_real_camera_001487.jpg",
+      "reason": "The dedicated detector exceeded the conservative AI threshold.",
+      "verdict": "likely_ai_generated_or_manipulated"
+    }
+  ],
+  "legacy_frontend_likely_ai_decision": {
+    "ai_recall": 0.78,
+    "false_ai_alarm": 7,
+    "false_positive_rate": 0.035,
+    "threshold": 0.7,
+    "true_ai": 78
+  },
+  "metrics": {
+    "ai_recall": 0.52,
+    "authentic_recall": 0.745,
+    "decisive_accuracy": 0.971014,
+    "decisive_coverage": 0.69,
+    "false_negative_rate_as_authentic": 0.05,
+    "false_positive_rate": 0.005,
+    "inconclusive_rate": 0.31,
+    "likely_ai_precision": 0.981132,
+    "likely_authentic_precision": 0.967532
+  },
+  "model_availability": {
+    "available": 300
+  },
+  "outcomes": {
+    "inconclusive": 93,
+    "likely_ai_generated_or_manipulated": 53,
+    "likely_authentic": 154
+  },
+  "per_class_outcomes": {
+    "ai_generated": {
+      "inconclusive": 43,
+      "likely_ai_generated_or_manipulated": 52,
+      "likely_authentic": 5
+    },
+    "real_camera": {
+      "inconclusive": 41,
+      "likely_ai_generated_or_manipulated": 1,
+      "likely_authentic": 58
+    },
+    "real_edited_or_captioned": {
+      "inconclusive": 9,
+      "likely_authentic": 91
+    }
+  },
+  "provenance_statuses": {
+    "tool_unavailable": 300
+  },
+  "sample_count": 300,
+  "sampling": {
+    "max_per_class": 100,
+    "seed": 20260714
+  },
+  "web_statuses": {
+    "not_configured": 300
+  }
+}

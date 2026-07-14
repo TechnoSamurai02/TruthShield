@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import math
 from typing import Any, Dict, List, Sequence
 
 from PIL import Image
@@ -33,9 +34,6 @@ REAL_LABEL_MARKERS = (
     "human made",
     "photograph",
 )
-FILENAME_SYNTHETIC_MARKERS = ("chatgpt", "dall", "dalle", "midjourney", "stable-diffusion", "sdxl", "generated", "ai")
-
-
 def run_image_detectors(
     image: Image.Image,
     filename: str,
@@ -137,7 +135,7 @@ def combined_synthetic_probability(detectors: List[Dict[str, Any]]) -> float | N
     fallback_probabilities = []
     for detector in detectors:
         probability = detector.get("synthetic_probability")
-        if not isinstance(probability, (int, float)):
+        if not isinstance(probability, (int, float)) or not math.isfinite(float(probability)):
             continue
         name = str(detector.get("name") or "")
         if name == "local_heuristic_synthetic_likelihood":
@@ -179,14 +177,16 @@ def completed_model_count(detectors: List[Dict[str, Any]]) -> int:
     return sum(
         1
         for detector in detectors
-        if detector.get("status") == "completed" and detector.get("name") != "local_heuristic_synthetic_likelihood"
+        if detector.get("status") == "completed"
+        and detector.get("name") != "local_heuristic_synthetic_likelihood"
+        and isinstance(detector.get("synthetic_probability"), (int, float))
+        and math.isfinite(float(detector["synthetic_probability"]))
     )
 
 
 def _heuristic_synthetic_detector(filename: str, metadata_present: bool, technical_details: Dict[str, Any]) -> Dict[str, Any]:
     probability = 0.14
     reasons: List[str] = []
-    lowered_filename = filename.lower()
     forensic = technical_details.get("forensic_analysis")
     forensic = forensic if isinstance(forensic, dict) else {}
     caption_overlay = forensic.get("caption_overlay")
@@ -194,19 +194,9 @@ def _heuristic_synthetic_detector(filename: str, metadata_present: bool, technic
     forensic_synthetic = _float_from(forensic, "synthetic_artifact_probability")
     forensic_manipulation = _float_from(forensic, "manipulation_probability")
 
-    if any(marker in lowered_filename for marker in FILENAME_SYNTHETIC_MARKERS):
-        probability += 0.40
-        reasons.append("The filename contains wording commonly used by AI generation tools.")
-    if not metadata_present:
-        probability += 0.05 if caption_like else 0.10
-        if caption_like:
-            reasons.append("No readable camera metadata was found, but the detected caption/edit can explain stripped metadata.")
-        else:
-            reasons.append("No readable camera metadata was found.")
-    detected_format = str(technical_details.get("detected_format") or "").upper()
-    if detected_format in {"PNG", "WEBP"} and not metadata_present:
-        probability += 0.03 if caption_like else 0.08
-        reasons.append("The file format and metadata pattern are common for generated or exported images.")
+    # Filenames, PNG/WEBP formats, and missing metadata are deliberately not
+    # scored. They are easy to change and are common for genuine downloads,
+    # screenshots, conversions, and social-media images.
     entropy = _float_detail(technical_details, "entropy")
     if entropy is not None and (entropy < 3.5 or entropy > 7.8):
         probability += 0.10
@@ -239,21 +229,35 @@ def _heuristic_synthetic_detector(filename: str, metadata_present: bool, technic
         reasons.append("No strong local synthetic markers were found.")
 
     probability = max(0.02, min(0.98, probability))
-    label = "likely_ai_generated" if probability >= 0.65 else "uncertain" if probability >= 0.35 else "likely_camera_or_natural"
+    label = (
+        "elevated_supporting_signal"
+        if probability >= 0.65
+        else "uncertain_supporting_signal"
+        if probability >= 0.35
+        else "lower_supporting_signal"
+    )
     return {
         "name": "local_heuristic_synthetic_likelihood",
         "status": "completed",
         "label": label,
         "score": round(probability, 3),
         "synthetic_probability": round(probability, 3),
-        "details": {"reasons": reasons, "model_type": "deterministic_free_fallback"},
+        "details": {
+            "reasons": reasons,
+            "model_type": "deterministic_supporting_heuristic",
+            "note": "This fallback cannot independently produce an AI verdict.",
+        },
     }
 
 
 def _run_huggingface_detector(image: Image.Image, model_id: str) -> Dict[str, Any]:
     try:
         classifier = _load_pipeline(model_id)
-        outputs = classifier(_prepare_classifier_image(classifier, image))
+        prepared = _prepare_classifier_image(classifier, image)
+        try:
+            outputs = classifier(prepared, top_k=None)
+        except TypeError:
+            outputs = classifier(prepared)
     except ImportError:
         return {
             "name": model_id,
@@ -276,6 +280,23 @@ def _run_huggingface_detector(image: Image.Image, model_id: str) -> Dict[str, An
     normalized = _normalize_outputs(outputs)
     synthetic_probability = _synthetic_probability(normalized)
     top = normalized[0] if normalized else {"label": "unknown", "score": 0.0}
+    if synthetic_probability is None:
+        return {
+            "name": model_id,
+            "status": "unsupported_labels" if normalized else "error",
+            "label": str(top["label"]) if normalized else None,
+            "score": round(float(top["score"]), 4) if normalized else None,
+            "synthetic_probability": None,
+            "details": {
+                "model_provider": "huggingface_local",
+                "top_labels": normalized[:5],
+                "reason": (
+                    "The model labels could not be mapped unambiguously to synthetic and authentic classes."
+                    if normalized
+                    else "The model returned no usable predictions."
+                ),
+            },
+        }
     return {
         "name": model_id,
         "status": "completed",
@@ -322,6 +343,7 @@ def _run_huggingface_detector_batch(
         outputs = [outputs]
     normalized_tiles = [_normalize_outputs(output) for output in outputs] if isinstance(outputs, list) else []
     probabilities = [_synthetic_probability(output) for output in normalized_tiles if output]
+    probabilities = [probability for probability in probabilities if probability is not None]
     if not probabilities:
         return {
             "name": f"{model_id}:tiled_pixel_scan",
@@ -465,22 +487,25 @@ def _normalize_outputs(outputs: Any) -> List[Dict[str, Any]]:
     for item in outputs:
         if not isinstance(item, dict):
             continue
-        normalized.append(
-            {
-                "label": str(item.get("label", "unknown")),
-                "score": float(item.get("score") or 0.0),
-            }
-        )
+        try:
+            score = float(item.get("score"))
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(score) or score < 0.0:
+            continue
+        normalized.append({"label": str(item.get("label", "unknown")), "score": score})
     return sorted(normalized, key=lambda item: item["score"], reverse=True)
 
 
-def _synthetic_probability(outputs: List[Dict[str, Any]]) -> float:
+def _synthetic_probability(outputs: List[Dict[str, Any]]) -> float | None:
     synthetic = 0.0
     real = 0.0
     unknown = 0.0
     for item in outputs:
         label = _normalized_label(item["label"])
         score = float(item["score"])
+        if not math.isfinite(score) or score < 0.0:
+            continue
         if any(marker in label for marker in REAL_LABEL_MARKERS):
             real += score
         elif any(marker in label for marker in SYNTHETIC_LABEL_MARKERS):
@@ -488,7 +513,7 @@ def _synthetic_probability(outputs: List[Dict[str, Any]]) -> float:
         else:
             unknown += score
     if synthetic == 0.0 and real == 0.0:
-        return 0.5 if unknown > 0 else 0.0
+        return None
     return max(0.0, min(1.0, synthetic / max(1e-6, synthetic + real)))
 
 

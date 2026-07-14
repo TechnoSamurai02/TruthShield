@@ -605,6 +605,22 @@ html[data-theme="dark"] .analysis-report.risk-low {
   letter-spacing: -0.065em;
 }
 
+.score-number.decision-word strong {
+  max-width: 360px;
+  margin-top: 12px;
+  font-size: clamp(3rem, 6vw, 5.4rem);
+  line-height: 0.95;
+  letter-spacing: -0.045em;
+  overflow-wrap: anywhere;
+}
+
+.assessment-reason {
+  margin: 0 0 18px;
+  color: var(--ink);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
 .score-number > span {
   margin-top: 12px;
   font-size: 2rem;

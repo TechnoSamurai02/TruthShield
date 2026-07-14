@@ -45,6 +45,31 @@ export interface CustomFeedback {
   next_steps: string[];
 }
 
+export type EvidenceSignalValue = "authentic" | "ai_generated_or_manipulated" | "neutral" | "unavailable";
+
+export interface EvidenceSignal {
+  source: string;
+  status: string;
+  signal: EvidenceSignalValue;
+  confidence: number;
+  reliability: number;
+  raw_score?: number | null;
+  evidence: string[];
+  limitations: string[];
+}
+
+export interface ImageAssessment {
+  verdict: "likely_authentic" | "inconclusive" | "likely_ai_generated_or_manipulated";
+  label: string;
+  confidence: "low" | "moderate" | "high";
+  detector_score?: number | null;
+  reason: string;
+  evidence_supporting_authenticity: string[];
+  evidence_raising_concern: string[];
+  limitations: string[];
+  signals: EvidenceSignal[];
+}
+
 export interface SuspiciousFrame {
   frame_index: number;
   source_frame_number?: number | null;
@@ -74,6 +99,7 @@ export interface AnalysisResult {
   web_research?: WebResearchResult | null;
   citations?: Citation[];
   custom_feedback?: CustomFeedback | null;
+  assessment?: ImageAssessment | null;
   frames_analyzed?: number;
   suspicious_frames?: SuspiciousFrame[];
 }

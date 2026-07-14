@@ -61,6 +61,29 @@ class CustomFeedback(BaseModel):
     next_steps: List[str] = Field(default_factory=list)
 
 
+class EvidenceSignal(BaseModel):
+    source: str
+    status: str
+    signal: Literal["authentic", "ai_generated_or_manipulated", "neutral", "unavailable"]
+    confidence: float = Field(..., ge=0, le=1)
+    reliability: float = Field(..., ge=0, le=1)
+    raw_score: Optional[float] = None
+    evidence: List[str] = Field(default_factory=list)
+    limitations: List[str] = Field(default_factory=list)
+
+
+class ImageAssessment(BaseModel):
+    verdict: Literal["likely_authentic", "inconclusive", "likely_ai_generated_or_manipulated"]
+    label: str
+    confidence: Literal["low", "moderate", "high"]
+    detector_score: Optional[float] = Field(None, ge=0, le=1)
+    reason: str
+    evidence_supporting_authenticity: List[str] = Field(default_factory=list)
+    evidence_raising_concern: List[str] = Field(default_factory=list)
+    limitations: List[str] = Field(default_factory=list)
+    signals: List[EvidenceSignal] = Field(default_factory=list)
+
+
 class AnalysisResponse(BaseModel):
     content_type: ContentType
     truth_score: int = Field(..., ge=0, le=100)
@@ -80,6 +103,7 @@ class AnalysisResponse(BaseModel):
     web_research: Optional[WebResearchResult] = None
     citations: List[Citation] = Field(default_factory=list)
     custom_feedback: Optional[CustomFeedback] = None
+    assessment: Optional[ImageAssessment] = None
 
 
 class VideoAnalysisResponse(AnalysisResponse):

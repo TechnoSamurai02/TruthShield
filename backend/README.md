@@ -49,4 +49,4 @@ VIDEO_TILE_ANALYSIS=true
 LOCAL_REASONING_BASE_URL=
 ```
 
-`VIDEO_ANALYSIS_MODE=exhaustive`, `VIDEO_FRAME_STRIDE=1`, and `VIDEO_MAX_FRAMES=0` process every decoded frame. `VIDEO_TILE_ANALYSIS=true` adds overlapping full-coverage model tiles and can be very slow on a CPU. `GOOGLE_VISION_API_KEY`, `BRAVE_SEARCH_API_KEY`, trained model paths, C2PA tooling, and a local reasoning endpoint are optional. The API still returns a valid report when any of them are absent.
+`VIDEO_ANALYSIS_MODE=exhaustive`, `VIDEO_FRAME_STRIDE=1`, and `VIDEO_MAX_FRAMES=0` process every decoded frame. `VIDEO_TILE_ANALYSIS=true` adds overlapping full-coverage model tiles and can be very slow on a CPU. `GOOGLE_VISION_API_KEY`, `BRAVE_SEARCH_API_KEY`, trained model paths, C2PA tooling, and a local reasoning endpoint are optional. Image responses use a backend-owned three-way assessment. Missing providers, metadata, manifests, scores, or web matches return neutral/unavailable signals and never default to AI.

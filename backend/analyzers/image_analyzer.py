@@ -11,7 +11,7 @@ from PIL import Image, ImageStat, UnidentifiedImageError
 
 from analyzers.enhanced import enhance_image_result
 from analyzers.image_forensics import analyze_image_forensics
-from analyzers.metadata import extract_exif_metadata, has_camera_make_or_model, metadata_score
+from analyzers.metadata import analyze_metadata_evidence, extract_exif_metadata, has_camera_make_or_model, metadata_score
 from analyzers.scoring import (
     DISCLAIMER,
     IMAGE_VIDEO_RECOMMENDATIONS,
@@ -91,14 +91,11 @@ def _analyze_pil_image(
             if has_camera_make_or_model(exif):
                 score += 8
                 positives.append("Camera make or model metadata is present.")
-            else:
-                warnings.append("Metadata exists, but no camera make or model was found.")
         else:
-            score -= 10
-            warnings.append("No readable EXIF metadata was found.")
-            if image_format in {"JPEG", "WEBP"}:
-                score -= 8
-                warnings.append("Metadata appears stripped or unavailable for a format that often carries it.")
+            # Missing metadata is deliberately neutral. Genuine files commonly
+            # lose EXIF through downloads, messaging, screenshots, conversion,
+            # and social-media processing.
+            pass
 
         expected_format = EXTENSION_FORMATS.get(extension)
         if expected_format and image_format and expected_format != image_format:
@@ -120,12 +117,12 @@ def _analyze_pil_image(
         positives.append("Image entropy falls in a typical range.")
     else:
         score -= 8
-        warnings.append("Image entropy is unusually low or high, which can indicate synthetic or degraded content.")
+        warnings.append("Image entropy is unusually low or high, which can indicate low-detail or degraded content.")
 
     blur_score = _laplacian_variance(image)
     if blur_score < 35:
         score -= 8
-        warnings.append("Possible over-smoothing or heavy blur was detected.")
+        warnings.append("Heavy blur or low fine-detail was detected.")
 
     forensics = analyze_image_forensics(image, content_bytes=content_bytes, filename=filename)
     forensic_warnings = list(forensics.get("warnings", []))
@@ -144,6 +141,7 @@ def _analyze_pil_image(
         positives.append("No major compression inconsistency was detected.")
 
     color_stats = _color_statistics(image)
+    metadata_analysis = analyze_metadata_evidence(exif)
     forensic_score = float(forensics.get("score", 50.0))
     synthetic_artifact_probability = float(forensics.get("synthetic_artifact_probability", 0.5))
     if synthetic_artifact_probability >= 0.62:
@@ -183,6 +181,7 @@ def _analyze_pil_image(
         "forensic_analysis": forensics,
         "color_statistics": color_stats,
         "metadata_fields_found": sorted(exif.keys())[:20],
+        "metadata_analysis": metadata_analysis,
         "heuristic_note": "These signals are educational heuristics and are not proof of authenticity or manipulation.",
     }
     if content_bytes is not None:

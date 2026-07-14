@@ -1,0 +1,626 @@
+{
+  "accuracy": 0.835,
+  "audit_leakage_excluded_count": 4,
+  "audit_leakage_excluded_paths": [
+    "test\\ai_generated\\test_ai_generated_000101.jpg",
+    "test\\ai_generated\\test_ai_generated_002626.jpg",
+    "test\\real_camera\\test_real_camera_001037.jpg",
+    "test\\real_camera\\test_real_camera_002537.jpg"
+  ],
+  "balanced_accuracy": 0.835,
+  "binary_ai_detection": {
+    "accuracy": 0.905,
+    "available": true,
+    "confusion_matrix": {
+      "false_ai_alarm": 119,
+      "missed_ai": 52,
+      "true_ai": 548,
+      "true_non_ai": 1081
+    },
+    "expected_calibration_error": 0.043732,
+    "false_negative_rate": 0.086667,
+    "false_positive_rate": 0.099167,
+    "precision": 0.821589,
+    "recall": 0.913333,
+    "roc_auc": 0.965404,
+    "specificity": 0.900833,
+    "threshold": 0.5
+  },
+  "classes": {
+    "ai_generated": {
+      "f1": 0.854503,
+      "precision": 0.793991,
+      "recall": 0.925,
+      "support": 600
+    },
+    "real_camera": {
+      "f1": 0.781553,
+      "precision": 0.759434,
+      "recall": 0.805,
+      "support": 600
+    },
+    "real_edited_or_captioned": {
+      "f1": 0.873239,
+      "precision": 1.0,
+      "recall": 0.775,
+      "support": 600
+    }
+  },
+  "confusion_matrix_rows_expected_columns_predicted": [
+    [
+      555,
+      45,
+      0
+    ],
+    [
+      117,
+      483,
+      0
+    ],
+    [
+      27,
+      108,
+      465
+    ]
+  ],
+  "data_split": "C:\\Users\\rishi\\OneDrive\\Desktop\\Hackathon Project\\truthshield-ai\\training\\data\\defactify_sample\\test",
+  "labels": [
+    "ai_generated",
+    "real_camera",
+    "real_edited_or_captioned"
+  ],
+  "legacy_frontend_likely_ai_decision": {
+    "ai_count": 600,
+    "ai_recall": 0.83,
+    "available": true,
+    "false_ai_alarm": 62,
+    "false_positive_rate": 0.051667,
+    "non_ai_count": 1200,
+    "precision": 0.889286,
+    "threshold": 0.7,
+    "true_ai": 498
+  },
+  "likely_ai_threshold_analysis": [
+    {
+      "ai_count": 600,
+      "ai_recall": 0.913333,
+      "available": true,
+      "false_ai_alarm": 119,
+      "false_positive_rate": 0.099167,
+      "non_ai_count": 1200,
+      "precision": 0.821589,
+      "threshold": 0.5,
+      "true_ai": 548
+    },
+    {
+      "ai_count": 600,
+      "ai_recall": 0.83,
+      "available": true,
+      "false_ai_alarm": 62,
+      "false_positive_rate": 0.051667,
+      "non_ai_count": 1200,
+      "precision": 0.889286,
+      "threshold": 0.7,
+      "true_ai": 498
+    },
+    {
+      "ai_count": 600,
+      "ai_recall": 0.74,
+      "available": true,
+      "false_ai_alarm": 34,
+      "false_positive_rate": 0.028333,
+      "non_ai_count": 1200,
+      "precision": 0.92887,
+      "threshold": 0.8,
+      "true_ai": 444
+    },
+    {
+      "ai_count": 600,
+      "ai_recall": 0.693333,
+      "available": true,
+      "false_ai_alarm": 22,
+      "false_positive_rate": 0.018333,
+      "non_ai_count": 1200,
+      "precision": 0.949772,
+      "threshold": 0.85,
+      "true_ai": 416
+    },
+    {
+      "ai_count": 600,
+      "ai_recall": 0.6,
+      "available": true,
+      "false_ai_alarm": 12,
+      "false_positive_rate": 0.01,
+      "non_ai_count": 1200,
+      "precision": 0.967742,
+      "threshold": 0.9,
+      "true_ai": 360
+    },
+    {
+      "ai_count": 600,
+      "ai_recall": 0.421667,
+      "available": true,
+      "false_ai_alarm": 7,
+      "false_positive_rate": 0.005833,
+      "non_ai_count": 1200,
+      "precision": 0.973077,
+      "threshold": 0.95,
+      "true_ai": 253
+    }
+  ],
+  "macro_f1": 0.836432,
+  "misclassified_examples": [
+    {
+      "confidence": 0.763924,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000012.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.210459,
+        "real_camera": 0.763924,
+        "real_edited_or_captioned": 0.025617
+      }
+    },
+    {
+      "confidence": 0.547604,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000059.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.383293,
+        "real_camera": 0.547604,
+        "real_edited_or_captioned": 0.069102
+      }
+    },
+    {
+      "confidence": 0.90861,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000100.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.052391,
+        "real_camera": 0.90861,
+        "real_edited_or_captioned": 0.038999
+      }
+    },
+    {
+      "confidence": 0.871109,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000111.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.107614,
+        "real_camera": 0.871109,
+        "real_edited_or_captioned": 0.021277
+      }
+    },
+    {
+      "confidence": 0.982744,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000131.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.00496,
+        "real_camera": 0.982744,
+        "real_edited_or_captioned": 0.012296
+      }
+    },
+    {
+      "confidence": 0.479492,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000190.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.409071,
+        "real_camera": 0.479492,
+        "real_edited_or_captioned": 0.111437
+      }
+    },
+    {
+      "confidence": 0.596209,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000210.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.302442,
+        "real_camera": 0.596209,
+        "real_edited_or_captioned": 0.10135
+      }
+    },
+    {
+      "confidence": 0.833988,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000285.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.090789,
+        "real_camera": 0.833988,
+        "real_edited_or_captioned": 0.075223
+      }
+    },
+    {
+      "confidence": 0.507703,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000305.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.43614,
+        "real_camera": 0.507703,
+        "real_edited_or_captioned": 0.056157
+      }
+    },
+    {
+      "confidence": 0.611598,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000307.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.342663,
+        "real_camera": 0.611598,
+        "real_edited_or_captioned": 0.045739
+      }
+    },
+    {
+      "confidence": 0.629839,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000420.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.287072,
+        "real_camera": 0.629839,
+        "real_edited_or_captioned": 0.083089
+      }
+    },
+    {
+      "confidence": 0.905681,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000436.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.01964,
+        "real_camera": 0.905681,
+        "real_edited_or_captioned": 0.07468
+      }
+    },
+    {
+      "confidence": 0.571174,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000473.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.422276,
+        "real_camera": 0.571174,
+        "real_edited_or_captioned": 0.00655
+      }
+    },
+    {
+      "confidence": 0.417982,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000503.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.411991,
+        "real_camera": 0.417982,
+        "real_edited_or_captioned": 0.170027
+      }
+    },
+    {
+      "confidence": 0.515592,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000593.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.3957,
+        "real_camera": 0.515592,
+        "real_edited_or_captioned": 0.088708
+      }
+    },
+    {
+      "confidence": 0.660363,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000898.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.26789,
+        "real_camera": 0.660363,
+        "real_edited_or_captioned": 0.071747
+      }
+    },
+    {
+      "confidence": 0.498339,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000950.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.377202,
+        "real_camera": 0.498339,
+        "real_edited_or_captioned": 0.12446
+      }
+    },
+    {
+      "confidence": 0.751872,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_000964.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.190299,
+        "real_camera": 0.751872,
+        "real_edited_or_captioned": 0.057829
+      }
+    },
+    {
+      "confidence": 0.855775,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_001045.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.064055,
+        "real_camera": 0.855775,
+        "real_edited_or_captioned": 0.080171
+      }
+    },
+    {
+      "confidence": 0.743234,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_001106.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.169186,
+        "real_camera": 0.743234,
+        "real_edited_or_captioned": 0.08758
+      }
+    },
+    {
+      "confidence": 0.977404,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_001148.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.003894,
+        "real_camera": 0.977404,
+        "real_edited_or_captioned": 0.018702
+      }
+    },
+    {
+      "confidence": 0.584862,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_001214.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.284064,
+        "real_camera": 0.584862,
+        "real_edited_or_captioned": 0.131074
+      }
+    },
+    {
+      "confidence": 0.603312,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_001341.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.312055,
+        "real_camera": 0.603312,
+        "real_edited_or_captioned": 0.084633
+      }
+    },
+    {
+      "confidence": 0.509416,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_001358.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.474176,
+        "real_camera": 0.509416,
+        "real_edited_or_captioned": 0.016408
+      }
+    },
+    {
+      "confidence": 0.994113,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_001436.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 5.8e-05,
+        "real_camera": 0.994113,
+        "real_edited_or_captioned": 0.005829
+      }
+    },
+    {
+      "confidence": 0.554987,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_001478.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.321446,
+        "real_camera": 0.554987,
+        "real_edited_or_captioned": 0.123567
+      }
+    },
+    {
+      "confidence": 0.777042,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_001485.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.118041,
+        "real_camera": 0.777042,
+        "real_edited_or_captioned": 0.104918
+      }
+    },
+    {
+      "confidence": 0.497188,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_001491.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.424779,
+        "real_camera": 0.497188,
+        "real_edited_or_captioned": 0.078033
+      }
+    },
+    {
+      "confidence": 0.530102,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_001505.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.417113,
+        "real_camera": 0.530102,
+        "real_edited_or_captioned": 0.052784
+      }
+    },
+    {
+      "confidence": 0.506128,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_001583.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.404735,
+        "real_camera": 0.506128,
+        "real_edited_or_captioned": 0.089137
+      }
+    },
+    {
+      "confidence": 0.602827,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_001624.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.267451,
+        "real_camera": 0.602827,
+        "real_edited_or_captioned": 0.129722
+      }
+    },
+    {
+      "confidence": 0.961508,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_001629.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.002797,
+        "real_camera": 0.961508,
+        "real_edited_or_captioned": 0.035695
+      }
+    },
+    {
+      "confidence": 0.819382,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_002267.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.147388,
+        "real_camera": 0.819382,
+        "real_edited_or_captioned": 0.03323
+      }
+    },
+    {
+      "confidence": 0.639568,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_002293.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.288173,
+        "real_camera": 0.639568,
+        "real_edited_or_captioned": 0.072259
+      }
+    },
+    {
+      "confidence": 0.550689,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_002306.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.390788,
+        "real_camera": 0.550689,
+        "real_edited_or_captioned": 0.058523
+      }
+    },
+    {
+      "confidence": 0.742242,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_002346.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.106577,
+        "real_camera": 0.742242,
+        "real_edited_or_captioned": 0.151181
+      }
+    },
+    {
+      "confidence": 0.519708,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_002356.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.338369,
+        "real_camera": 0.519708,
+        "real_edited_or_captioned": 0.141923
+      }
+    },
+    {
+      "confidence": 0.784439,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_002430.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.11801,
+        "real_camera": 0.784439,
+        "real_edited_or_captioned": 0.097551
+      }
+    },
+    {
+      "confidence": 0.816495,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_002451.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.100706,
+        "real_camera": 0.816495,
+        "real_edited_or_captioned": 0.082799
+      }
+    },
+    {
+      "confidence": 0.577126,
+      "expected": "ai_generated",
+      "path": "training\\data\\defactify_sample\\test\\ai_generated\\test_ai_generated_002546.jpg",
+      "predicted": "real_camera",
+      "scores": {
+        "ai_generated": 0.290158,
+        "real_camera": 0.577126,
+        "real_edited_or_captioned": 0.132715
+      }
+    }
+  ],
+  "model_dir": "C:\\Users\\rishi\\OneDrive\\Desktop\\Hackathon Project\\truthshield-ai\\training\\models\\truthshield-image-detector-v2",
+  "sample_count": 1800,
+  "sampling": {
+    "max_per_class": 600,
+    "max_samples": 0,
+    "seed": 20260714
+  },
+  "three_way_detection": {
+    "ai_min": 0.95,
+    "ai_recall": 0.421667,
+    "authentic_max": 0.15,
+    "authentic_recall": 0.718333,
+    "available": true,
+    "counts": {
+      "ai_inconclusive": 333,
+      "ai_mislabeled_authentic": 14,
+      "false_ai_alarm": 7,
+      "inconclusive": 664,
+      "likely_ai": 260,
+      "likely_authentic": 876,
+      "non_ai_inconclusive": 331,
+      "true_ai": 253,
+      "true_authentic": 862
+    },
+    "decisive_accuracy": 0.981514,
+    "decisive_coverage": 0.631111,
+    "false_negative_rate_as_authentic": 0.023333,
+    "false_positive_rate": 0.005833,
+    "inconclusive_rate": 0.368889,
+    "likely_ai_precision": 0.973077,
+    "likely_authentic_precision": 0.984018
+  }
+}

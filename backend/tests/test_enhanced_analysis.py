@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import math
 import os
 import tempfile
 import unittest
@@ -14,13 +15,17 @@ from PIL import Image
 from analyzers.enhanced import enhance_image_result, enhance_video_result
 from analyzers.ai_detectors import (
     _covering_tiles,
+    _normalize_outputs,
     _prepare_classifier_image,
+    _synthetic_probability,
     combined_synthetic_probability,
     reuse_full_frame_predictions_as_single_tile,
 )
 from analyzers.image_forensics import analyze_image_forensics
+from analyzers.image_decision import assess_image_evidence
 from analyzers.image_analyzer import analyze_frame_array, analyze_image_bytes
 from analyzers.config import _configured_models
+from analyzers.metadata import analyze_metadata_evidence
 from analyzers.provenance import verify_image_provenance
 from analyzers.text_analyzer import analyze_text
 from analyzers.video_analyzer import _uniform_frame_positions, analyze_video_path
@@ -62,8 +67,8 @@ class EnhancedAnalysisTests(unittest.TestCase):
                 "name": "mock_detector",
                 "status": "completed",
                 "label": "fake",
-                "score": 0.94,
-                "synthetic_probability": 0.94,
+                "score": 0.97,
+                "synthetic_probability": 0.97,
                 "details": {},
             }
         ]
@@ -89,9 +94,10 @@ class EnhancedAnalysisTests(unittest.TestCase):
         ), patch("analyzers.enhanced.research_image_context", return_value=web):
             enhanced = enhance_image_result(base_result, image, "ChatGPT Image.png", b"image-bytes", "image")
 
-        self.assertLess(enhanced["truth_score"], 30)
+        self.assertEqual(enhanced["truth_score"], 74)
         self.assertIn("ai_generation_score", enhanced["evidence"])
         self.assertTrue(enhanced["technical_details"]["ai_detector_summary"]["learned_model_available"])
+        self.assertEqual(enhanced["assessment"]["verdict"], "likely_ai_generated_or_manipulated")
         self.assertTrue(enhanced["custom_feedback"]["headline"])
         AnalysisResponse(**enhanced)
 
@@ -152,6 +158,45 @@ class EnhancedAnalysisTests(unittest.TestCase):
         self.assertEqual(result["provider"], "google_vision_web_detection")
         self.assertEqual(result["details"]["source_match"]["status"], "exact_visual_match")
         self.assertGreater(result["matches_found"], 0)
+
+    def test_google_visual_clues_feed_indexed_search_fallback(self) -> None:
+        google_payload = {
+            "responses": [
+                {
+                    "webDetection": {
+                        "bestGuessLabels": [{"label": "Eiffel Tower at night"}],
+                        "webEntities": [{"description": "Paris landmark", "score": 0.88}],
+                    }
+                }
+            ]
+        }
+        brave_result = {
+            "status": "no_results",
+            "provider": "brave_search",
+            "score": 50.0,
+            "queries": [],
+            "matches_found": 0,
+            "summary": "No indexed matches.",
+            "citations": [],
+            "details": {},
+        }
+        with patch.dict(
+            os.environ,
+            {"GOOGLE_VISION_API_KEY": "test-key", "BRAVE_SEARCH_API_KEY": "brave-key"},
+            clear=False,
+        ), patch(
+            "analyzers.web_research._google_vision_post",
+            return_value={"status": "ok", "data": google_payload},
+        ), patch("analyzers.web_research._run_research", return_value=brave_result) as indexed_search:
+            result = research_image_context("IMG_0001.jpg", content_bytes=b"image-bytes")
+
+        query = indexed_search.call_args.args[0][0]
+        self.assertIn("eiffel", query)
+        self.assertIn("paris", query)
+        self.assertEqual(
+            result["details"]["visual_query_clues"]["best_guess_labels"],
+            ["Eiffel Tower at night"],
+        )
 
     def test_provenance_fallback_when_tools_absent(self) -> None:
         with patch("analyzers.provenance._try_c2pa_python", return_value=None), patch(
@@ -365,9 +410,129 @@ class EnhancedAnalysisTests(unittest.TestCase):
         with patch("analyzers.enhanced.run_image_detectors", return_value=detectors):
             enhanced = enhance_image_result(base_result, image, "upload.png", None, "image")
 
-        self.assertEqual(enhanced["truth_score"], 59)
+        self.assertEqual(enhanced["truth_score"], 98)
         self.assertFalse(enhanced["technical_details"]["ai_detector_summary"]["learned_model_available"])
-        self.assertTrue(any("trained AI-image detector was unavailable" in item for item in enhanced["warnings"]))
+        self.assertEqual(enhanced["assessment"]["verdict"], "inconclusive")
+        self.assertNotIn("ai_generation_score", enhanced["evidence"])
+
+    def test_legacy_seventy_percent_false_alarm_now_abstains(self) -> None:
+        assessment, debug = assess_image_evidence(
+            [
+                {
+                    "name": "truthshield-image-detector-v2",
+                    "status": "completed",
+                    "synthetic_probability": 0.7296,
+                    "details": {"model_provider": "huggingface_local"},
+                }
+            ],
+            {
+                "metadata_analysis": analyze_metadata_evidence({}),
+                "forensic_analysis": {"synthetic_artifact_probability": 0.32},
+                "compression_consistency": {"score": 70.0, "is_inconsistent": False},
+            },
+            {"status": "no_manifest", "score": 42.0},
+            {"status": "not_configured", "score": 50.0, "details": {"source_match": {"status": "not_checked"}}},
+        )
+
+        self.assertEqual(assessment["verdict"], "inconclusive")
+        self.assertEqual(debug["decision_thresholds"]["likely_ai_detector_min"], 0.95)
+        self.assertIsNone(debug["combined_calibrated_score"])
+
+    def test_missing_metadata_and_detector_failure_are_inconclusive(self) -> None:
+        assessment, _ = assess_image_evidence(
+            [{"name": "truthshield-image-detector-v2", "status": "error", "synthetic_probability": None}],
+            {
+                "metadata_analysis": analyze_metadata_evidence({}),
+                "forensic_analysis": {"synthetic_artifact_probability": 0.88},
+                "compression_consistency": {"score": 20.0, "is_inconsistent": True},
+            },
+            {"status": "error", "score": 45.0},
+            {"status": "error", "score": 50.0, "details": {"source_match": {"status": "not_checked"}}},
+        )
+
+        self.assertEqual(assessment["verdict"], "inconclusive")
+        self.assertTrue(any("not evidence of AI generation" in item for item in assessment["limitations"]))
+
+    def test_weak_heuristic_cannot_trigger_ai_without_learned_model(self) -> None:
+        assessment, _ = assess_image_evidence(
+            [
+                {
+                    "name": "local_heuristic_synthetic_likelihood",
+                    "status": "completed",
+                    "synthetic_probability": 0.98,
+                }
+            ],
+            {
+                "metadata_analysis": analyze_metadata_evidence({}),
+                "forensic_analysis": {"synthetic_artifact_probability": 0.92},
+                "compression_consistency": {"score": 15.0, "is_inconsistent": True},
+            },
+            None,
+            None,
+        )
+
+        self.assertEqual(assessment["verdict"], "inconclusive")
+
+    def test_conservative_thresholds_preserve_both_decisive_outcomes(self) -> None:
+        common = {
+            "metadata_analysis": analyze_metadata_evidence({}),
+            "forensic_analysis": {"synthetic_artifact_probability": 0.30},
+            "compression_consistency": {"score": 70.0, "is_inconsistent": False},
+        }
+        authentic, _ = assess_image_evidence(
+            [{"name": "truthshield-image-detector-v2", "status": "completed", "synthetic_probability": 0.05}],
+            common,
+            None,
+            None,
+        )
+        synthetic, _ = assess_image_evidence(
+            [{"name": "truthshield-image-detector-v2", "status": "completed", "synthetic_probability": 0.97}],
+            common,
+            None,
+            None,
+        )
+
+        self.assertEqual(authentic["verdict"], "likely_authentic")
+        self.assertEqual(synthetic["verdict"], "likely_ai_generated_or_manipulated")
+
+    def test_camera_metadata_conflict_abstains(self) -> None:
+        assessment, _ = assess_image_evidence(
+            [{"name": "truthshield-image-detector-v2", "status": "completed", "synthetic_probability": 0.97}],
+            {
+                "metadata_analysis": analyze_metadata_evidence({"Make": "Example Camera"}),
+                "forensic_analysis": {"synthetic_artifact_probability": 0.30},
+                "compression_consistency": {"score": 75.0, "is_inconsistent": False},
+            },
+            None,
+            None,
+        )
+
+        self.assertEqual(assessment["verdict"], "inconclusive")
+
+    def test_explicit_ai_software_metadata_is_positive_evidence(self) -> None:
+        assessment, _ = assess_image_evidence(
+            [{"name": "truthshield-image-detector-v2", "status": "error", "synthetic_probability": None}],
+            {
+                "metadata_analysis": analyze_metadata_evidence({"Software": "ComfyUI"}),
+                "forensic_analysis": {"synthetic_artifact_probability": 0.40},
+                "compression_consistency": {"score": 75.0, "is_inconsistent": False},
+            },
+            None,
+            None,
+        )
+
+        self.assertEqual(assessment["verdict"], "likely_ai_generated_or_manipulated")
+        self.assertTrue(any("ComfyUI" in item for item in assessment["evidence_raising_concern"]))
+
+    def test_invalid_and_unknown_model_outputs_do_not_become_ai_scores(self) -> None:
+        normalized = _normalize_outputs(
+            [
+                {"label": "ai_generated", "score": math.nan},
+                {"label": "real_camera", "score": 0.8},
+            ]
+        )
+        self.assertEqual(_synthetic_probability(normalized), 0.0)
+        self.assertIsNone(_synthetic_probability([{"label": "class_0", "score": 1.0}]))
 
 
 if __name__ == "__main__":

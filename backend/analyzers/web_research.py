@@ -29,15 +29,39 @@ def research_image_context(
     queries = _image_queries(filename, visible_text, settings.web_research_per_scan_limit)
     if content_bytes and settings.google_vision_api_key:
         google_result = _run_google_vision_web_detection(content_bytes, settings, attachment_fingerprint)
-        if google_result["status"] != "no_results" or not settings.brave_search_api_key:
+        if google_result["status"] == "completed" or not settings.brave_search_api_key:
             return google_result
+        google_details = google_result.get("details")
+        google_details = google_details if isinstance(google_details, dict) else {}
+        best_guess_labels = [
+            str(label)
+            for label in google_details.get("best_guess_labels", [])
+            if isinstance(label, str) and label.strip()
+        ]
+        web_entities = google_details.get("web_entities")
+        web_entities = web_entities if isinstance(web_entities, list) else []
+        entity_descriptions = [
+            str(entity.get("description"))
+            for entity in web_entities
+            if isinstance(entity, dict) and entity.get("description")
+        ]
+        visual_context = " ".join([*best_guess_labels, *entity_descriptions])
+        queries = _image_queries(
+            filename,
+            f"{visible_text} {visual_context}",
+            settings.web_research_per_scan_limit,
+        )
         brave_result = _run_research(queries, settings, search_kind="image", attachment_fingerprint=attachment_fingerprint)
         brave_details = brave_result.setdefault("details", {})
         if isinstance(brave_details, dict):
-            brave_details["uploaded_image_search"] = google_result["details"]
+            brave_details["uploaded_image_search"] = google_details
+            brave_details["visual_query_clues"] = {
+                "best_guess_labels": best_guess_labels,
+                "web_entity_descriptions": entity_descriptions,
+            }
         if brave_result["matches_found"] > 0:
             brave_result["summary"] = (
-                "Uploaded-image search found no full/partial visual matches, but indexed image search found context leads."
+                "Uploaded-image search found no full/partial visual matches, but indexed image search found context leads from available visual or text clues."
             )
         return brave_result
     if content_bytes and not settings.google_vision_api_key and not settings.brave_search_api_key:
