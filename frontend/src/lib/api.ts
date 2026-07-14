@@ -21,11 +21,18 @@ async function parseResponse(response: Response): Promise<AnalysisResult> {
 async function analyzeFile(endpoint: string, file: File): Promise<AnalysisResult> {
   const formData = new FormData();
   formData.append("file", file);
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: "POST",
-    body: formData
-  });
-  return parseResponse(response);
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: "POST",
+      body: formData
+    });
+    return parseResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error("TruthShield could not reach the analysis service. Check the connection and try again.");
+    }
+    throw error;
+  }
 }
 
 export function analyzeImage(file: File): Promise<AnalysisResult> {
@@ -34,15 +41,4 @@ export function analyzeImage(file: File): Promise<AnalysisResult> {
 
 export function analyzeVideo(file: File): Promise<AnalysisResult> {
   return analyzeFile("/api/analyze/video", file);
-}
-
-export async function analyzeText(text: string): Promise<AnalysisResult> {
-  const response = await fetch(`${API_BASE_URL}/api/analyze/text`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ text })
-  });
-  return parseResponse(response);
 }

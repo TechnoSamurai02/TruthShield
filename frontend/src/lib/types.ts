@@ -1,4 +1,4 @@
-export type ContentType = "image" | "video" | "text";
+export type MediaType = "image" | "video";
 
 export type RiskLevel = "High Trust" | "Medium Trust" | "Low Trust" | "High Risk";
 
@@ -56,7 +56,7 @@ export interface SuspiciousFrame {
 }
 
 export interface AnalysisResult {
-  content_type: ContentType;
+  content_type: MediaType;
   truth_score: number;
   risk_level: RiskLevel | string;
   verdict: string;

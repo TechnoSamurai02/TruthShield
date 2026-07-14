@@ -91,7 +91,7 @@ FRONTEND_ORIGINS=https://truthshield-ai-frontend.pages.dev,https://www.your-doma
 
 Open the deployed frontend and run:
 
-- Text scan with one of the demo examples
+- Image and video analysis with representative test files
 - Image upload with a small `.jpg` or `.png`
 - Health check directly at `/api/health`
 

@@ -5,9 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="TruthShield AI is a hackathon MVP for risk-based image, video, and text verification signals."
+      content="Analyze suspicious images and videos for warning signs with an explainable, risk-based Truth Score."
     />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>TruthShield AI</title>
+    <script>
+      (() => {
+        const key = "truthshield-theme";
+        let saved = null;
+        try {
+          saved = window.localStorage.getItem(key);
+        } catch {
+          saved = null;
+        }
+        const theme = saved === "light" || saved === "dark"
+          ? saved
+          : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
