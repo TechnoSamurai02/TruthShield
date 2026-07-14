@@ -67,7 +67,14 @@ def _configured_models(name: str, defaults: list[str]) -> list[str]:
     raw = os.getenv(name)
     if raw is None or not raw.strip():
         return defaults
-    return [item.strip() for item in raw.split(",") if item.strip()]
+    configured = [item.strip() for item in raw.split(",") if item.strip()]
+    if name == "AI_IMAGE_DETECTOR_MODELS":
+        # Older deployment instructions populated this variable with generic
+        # Hub models. Keep a packaged TruthShield model first when it exists so
+        # that a stale environment variable cannot silently disable it.
+        packaged = [item for item in defaults if Path(item).is_dir()]
+        configured = [*packaged, *configured]
+    return list(dict.fromkeys(configured))
 
 
 @dataclass(frozen=True)

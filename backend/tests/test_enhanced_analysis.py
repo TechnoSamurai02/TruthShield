@@ -20,6 +20,7 @@ from analyzers.ai_detectors import (
 )
 from analyzers.image_forensics import analyze_image_forensics
 from analyzers.image_analyzer import analyze_frame_array, analyze_image_bytes
+from analyzers.config import _configured_models
 from analyzers.provenance import verify_image_provenance
 from analyzers.text_analyzer import analyze_text
 from analyzers.video_analyzer import _uniform_frame_positions, analyze_video_path
@@ -88,8 +89,9 @@ class EnhancedAnalysisTests(unittest.TestCase):
         ), patch("analyzers.enhanced.research_image_context", return_value=web):
             enhanced = enhance_image_result(base_result, image, "ChatGPT Image.png", b"image-bytes", "image")
 
-        self.assertLess(enhanced["truth_score"], 50)
+        self.assertLess(enhanced["truth_score"], 30)
         self.assertIn("ai_generation_score", enhanced["evidence"])
+        self.assertTrue(enhanced["technical_details"]["ai_detector_summary"]["learned_model_available"])
         self.assertTrue(enhanced["custom_feedback"]["headline"])
         AnalysisResponse(**enhanced)
 
@@ -302,6 +304,70 @@ class EnhancedAnalysisTests(unittest.TestCase):
         after = combined_synthetic_probability([*detectors, *reused])
         self.assertEqual(before, after)
         self.assertTrue(reused[0]["details"]["reused_full_frame_prediction"])
+
+    def test_learned_detector_is_not_diluted_by_heuristic_fallback(self) -> None:
+        detectors = [
+            {
+                "name": "local_heuristic_synthetic_likelihood",
+                "status": "completed",
+                "synthetic_probability": 0.08,
+                "details": {},
+            },
+            {
+                "name": "truthshield-image-detector-v2",
+                "status": "completed",
+                "synthetic_probability": 0.97,
+                "details": {"model_provider": "huggingface_local"},
+            },
+        ]
+
+        self.assertEqual(combined_synthetic_probability(detectors), 0.97)
+
+    def test_packaged_detector_stays_ahead_of_stale_environment_models(self) -> None:
+        with tempfile.TemporaryDirectory() as model_dir, patch.dict(
+            os.environ,
+            {"AI_IMAGE_DETECTOR_MODELS": "generic/older-detector"},
+            clear=False,
+        ):
+            configured = _configured_models("AI_IMAGE_DETECTOR_MODELS", [model_dir])
+
+        self.assertEqual(configured, [model_dir, "generic/older-detector"])
+
+    def test_fallback_only_image_cannot_receive_a_reassuring_score(self) -> None:
+        image = Image.new("RGB", (640, 480), color=(80, 120, 160))
+        base_result = {
+            "content_type": "image",
+            "truth_score": 98,
+            "risk_level": "High Trust",
+            "verdict": "Likely trustworthy",
+            "summary": "Baseline heuristic report.",
+            "warnings": [],
+            "positive_signals": ["Basic file checks passed."],
+            "recommendations": ["Verify important claims."],
+            "evidence": {
+                "metadata_score": 98.0,
+                "visual_consistency_score": 98.0,
+                "compression_score": 98.0,
+                "pixel_forensic_score": 98.0,
+            },
+            "technical_details": {"metadata_fields_found": []},
+            "disclaimer": "Test disclaimer.",
+        }
+        detectors = [
+            {
+                "name": "local_heuristic_synthetic_likelihood",
+                "status": "completed",
+                "synthetic_probability": 0.05,
+                "details": {},
+            }
+        ]
+
+        with patch("analyzers.enhanced.run_image_detectors", return_value=detectors):
+            enhanced = enhance_image_result(base_result, image, "upload.png", None, "image")
+
+        self.assertEqual(enhanced["truth_score"], 59)
+        self.assertFalse(enhanced["technical_details"]["ai_detector_summary"]["learned_model_available"])
+        self.assertTrue(any("trained AI-image detector was unavailable" in item for item in enhanced["warnings"]))
 
 
 if __name__ == "__main__":

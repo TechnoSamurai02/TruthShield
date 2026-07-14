@@ -132,21 +132,33 @@ def highest_synthetic_probability(detectors: List[Dict[str, Any]]) -> float | No
 
 
 def combined_synthetic_probability(detectors: List[Dict[str, Any]]) -> float | None:
-    weighted_probabilities = []
+    learned_probabilities = []
+    truthshield_probabilities = []
+    fallback_probabilities = []
     for detector in detectors:
         probability = detector.get("synthetic_probability")
         if not isinstance(probability, (int, float)):
             continue
         name = str(detector.get("name") or "")
         if name == "local_heuristic_synthetic_likelihood":
-            weight = 0.65
+            fallback_probabilities.append((float(probability), 1.0))
+            continue
         elif name.endswith(":tiled_pixel_scan"):
             if (detector.get("details") or {}).get("reused_full_frame_prediction"):
                 continue
             weight = 0.75
         else:
             weight = 1.0
-        weighted_probabilities.append((float(probability), weight))
+        if detector.get("status") == "completed":
+            learned_probabilities.append((float(probability), weight))
+            if "truthshield-image-detector" in name.lower():
+                truthshield_probabilities.append((float(probability), weight))
+
+    # Hand-written image statistics are only a fallback. Averaging them into a
+    # completed learned model can erase a correct high-confidence prediction
+    # (modern generated images often have perfectly ordinary entropy, sharpness,
+    # and compression). This was the main cause of contradictory app reports.
+    weighted_probabilities = truthshield_probabilities or learned_probabilities or fallback_probabilities
     if not weighted_probabilities:
         return None
     if len(weighted_probabilities) == 1:

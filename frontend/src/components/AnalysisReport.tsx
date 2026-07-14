@@ -55,6 +55,25 @@ function formatLabel(value: string): string {
   return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+const EVIDENCE_LABELS: Record<string, string> = {
+  ai_generation_score: "AI-generated likelihood",
+  sampled_frame_ai_generation_score: "Sampled-frame AI likelihood",
+  video_ai_generation_score: "Video AI-generated likelihood",
+  metadata_score: "Metadata availability (not authenticity)",
+  visual_consistency_score: "Basic image quality (not authenticity)",
+  compression_score: "Compression consistency (not authenticity)",
+  pixel_forensic_score: "Traditional forensic consistency",
+  ai_artifact_score: "Handcrafted AI-artifact signal",
+  source_score: "Source context",
+  provenance_score: "Verifiable provenance",
+  web_corroboration_score: "Web corroboration",
+  overall_risk_score: "Overall verification risk"
+};
+
+function evidenceLabel(value: string): string {
+  return EVIDENCE_LABELS[value] ?? formatLabel(value);
+}
+
 function readableStatus(value: string): string {
   return value.replace(/_/g, " ");
 }
@@ -78,13 +97,6 @@ function shortHash(value?: string): string | null {
   if (!value) return null;
   if (value.length <= 22) return value;
   return `${value.slice(0, 12)}…${value.slice(-8)}`;
-}
-
-function riskClass(scoreValue: number): string {
-  if (scoreValue >= 80) return "risk-trust";
-  if (scoreValue >= 60) return "risk-medium";
-  if (scoreValue >= 40) return "risk-low";
-  return "risk-high";
 }
 
 function detailInterpretation(record?: Record<string, unknown>): string | null {
@@ -119,6 +131,67 @@ function detectorSummary(detector: DetectorResult): string {
   }
   if (typeof detector.score === "number") return score(detector.score);
   return readableStatus(detector.status);
+}
+
+function detectorDisplayName(detector: DetectorResult): string {
+  const normalized = detector.name.toLowerCase();
+  if (normalized.includes("truthshield-image-detector")) return "TruthShield learned image detector";
+  if (normalized === "local_heuristic_synthetic_likelihood") return "Local heuristic fallback";
+  return detector.name;
+}
+
+function learnedDetectorAvailable(result: AnalysisResult): boolean {
+  const summary = objectRecord(result.technical_details?.ai_detector_summary);
+  if (typeof summary?.learned_model_available === "boolean") return summary.learned_model_available;
+  return Boolean(result.detectors?.some((detector) => {
+    const provider = detector.details?.model_provider;
+    const name = detector.name.toLowerCase();
+    return detector.status === "completed" && (
+      provider === "huggingface_local"
+      || name.includes("truthshield")
+      || name.includes("trained_")
+    );
+  }));
+}
+
+function aiGenerationLikelihood(result: AnalysisResult): number | null {
+  const evidenceKeys = result.content_type === "video"
+    ? ["video_ai_generation_score", "sampled_frame_ai_generation_score", "ai_generation_score"]
+    : ["ai_generation_score"];
+  for (const key of evidenceKeys) {
+    const value = result.evidence?.[key];
+    if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, Math.min(100, value));
+  }
+  const learned = result.detectors?.find((detector) =>
+    detector.status === "completed"
+      && detector.name !== "local_heuristic_synthetic_likelihood"
+      && typeof detector.synthetic_probability === "number"
+  );
+  return typeof learned?.synthetic_probability === "number"
+    ? Math.max(0, Math.min(100, learned.synthetic_probability * 100))
+    : null;
+}
+
+function generationVerdict(likelihood: number | null, learnedAvailable: boolean): { headline: string; detail: string } {
+  if (!learnedAvailable) {
+    return {
+      headline: "Trained detector unavailable",
+      detail: "Fallback estimate only — do not treat this as a reliable real-versus-AI verdict"
+    };
+  }
+  if (likelihood === null) return { headline: "No AI verdict", detail: "The detector returned no usable probability" };
+  if (likelihood >= 85) return { headline: "Very likely AI-generated", detail: "Strong learned-model signal" };
+  if (likelihood >= 70) return { headline: "Likely AI-generated", detail: "Learned-model signal" };
+  if (likelihood > 30) return { headline: "Mixed AI signals", detail: "The learned model is uncertain" };
+  if (likelihood <= 15) return { headline: "Likely camera-made", detail: "Low learned-model AI signal" };
+  return { headline: "Lower AI signal", detail: "The learned model leans away from AI generation" };
+}
+
+function generationRiskClass(likelihood: number | null, learnedAvailable: boolean): string {
+  if (!learnedAvailable || likelihood === null) return "risk-low";
+  if (likelihood >= 70) return "risk-high";
+  if (likelihood > 30) return "risk-medium";
+  return "risk-trust";
 }
 
 function ReportSection({ index, title, tone, children }: { index: string; title: string; tone?: string; children: ReactNode }) {
@@ -193,7 +266,7 @@ function TechnicalEvidence({ result }: { result: AnalysisResult }) {
         <h3>Analysis overview</h3>
         <dl className="metric-list">
           <div><dt>Mode</dt><dd>{readableStatus(result.analysis_mode ?? "local heuristic")}</dd></div>
-          <div><dt>Confidence</dt><dd>{percent(result.confidence)}</dd></div>
+          <div><dt>Evidence coverage</dt><dd>{percent(result.confidence)}</dd></div>
           {primitiveDetails.map(([key, value]) => (
             <div key={key}><dt>{formatLabel(key)}</dt><dd>{String(value)}</dd></div>
           ))}
@@ -264,7 +337,7 @@ function TechnicalEvidence({ result }: { result: AnalysisResult }) {
           <div className="detector-list">
             {result.detectors.map((detector, index) => (
               <div className="detector-row" key={`${detector.name}-${index}`}>
-                <div><strong>{detector.name}</strong>{detector.label ? <span>{readableStatus(detector.label)}</span> : null}</div>
+                <div><strong>{detectorDisplayName(detector)}</strong>{detector.label ? <span>{readableStatus(detector.label)}</span> : null}</div>
                 <span>{readableStatus(detector.status)}</span>
                 <span>{detectorSummary(detector)}</span>
               </div>
@@ -320,7 +393,12 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
   ref
 ) {
   const evidenceEntries = Object.entries(result.evidence ?? {});
+  const generationLikelihood = aiGenerationLikelihood(result);
+  const learnedAvailable = learnedDetectorAvailable(result);
+  const generationResult = generationVerdict(generationLikelihood, learnedAvailable);
   const technicalPreview = [
+    generationLikelihood !== null ? `${Math.round(generationLikelihood)}% AI likelihood` : null,
+    learnedAvailable ? "learned detector active" : "fallback only",
     typeof result.frames_analyzed === "number" ? `${result.frames_analyzed.toLocaleString()} frames` : null,
     result.suspicious_frames?.length ? `${result.suspicious_frames.length} suspicious samples` : null,
     result.detectors?.length ? `${result.detectors.length} detector opinions` : null
@@ -337,7 +415,7 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
     <section
       ref={ref}
       id="report"
-      className={`analysis-report ${riskClass(result.truth_score)}`}
+      className={`analysis-report ${generationRiskClass(generationLikelihood, learnedAvailable)}`}
       aria-labelledby="report-heading"
       tabIndex={-1}
     >
@@ -348,13 +426,19 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
 
       <div className="score-summary">
         <div className="score-block">
-          <span>Truth Score</span>
-          <strong>{Math.round(result.truth_score)}</strong>
+          <span>AI-generated likelihood</span>
+          <div className="score-number">
+            <strong>{generationLikelihood === null ? "—" : Math.round(generationLikelihood)}</strong>
+            {generationLikelihood === null ? null : <span>%</span>}
+          </div>
+          <small>{learnedAvailable ? "Learned detector" : "Heuristic fallback"}</small>
         </div>
         <div className="verdict-block">
-          <h1 id="report-heading">{result.risk_level}</h1>
-          <p className="verdict">{result.verdict}</p>
-          <p className="report-summary">{result.summary}</p>
+          <h1 id="report-heading">{generationResult.headline}</h1>
+          <p className="verdict">{generationResult.detail}</p>
+          <p className="report-summary">
+            Separate verification context score: {Math.round(result.truth_score)}/100. {result.summary}
+          </p>
         </div>
       </div>
 
@@ -363,7 +447,7 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
           <dl className="evidence-list">
             {evidenceEntries.map(([key, rawValue]) => (
               <div key={key}>
-                <dt>{formatLabel(key)}</dt>
+                <dt>{evidenceLabel(key)}</dt>
                 <dd>{Math.round(Number(rawValue) || 0)}</dd>
               </div>
             ))}
@@ -378,8 +462,8 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
         <FindingList items={result.warnings} emptyMessage="No strong warning signs were returned." />
       </ReportSection>
 
-      <ReportSection index="03" title="Reassuring signals" tone="positive-section">
-        <FindingList items={result.positive_signals} emptyMessage="No strong reassuring signals were returned." />
+      <ReportSection index="03" title="Other technical signals">
+        <FindingList items={result.positive_signals} emptyMessage="No additional technical signals were returned." />
       </ReportSection>
 
       <ReportSection index="04" title="Safety recommendation">

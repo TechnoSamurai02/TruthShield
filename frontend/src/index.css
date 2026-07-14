@@ -588,14 +588,34 @@ html[data-theme="dark"] .analysis-report.risk-low {
   font-size: 1.15rem;
 }
 
-.score-block strong {
+.score-number {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   margin-top: 2px;
   color: var(--risk);
+  font-variant-numeric: tabular-nums;
+}
+
+.score-number strong {
+  margin-top: 2px;
   font-size: clamp(7rem, 13vw, 10rem);
   font-weight: 400;
   line-height: 0.82;
   letter-spacing: -0.065em;
-  font-variant-numeric: tabular-nums;
+}
+
+.score-number > span {
+  margin-top: 12px;
+  font-size: 2rem;
+}
+
+.score-block > small {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .verdict-block h1,
@@ -1163,7 +1183,7 @@ html[data-theme="dark"] .analysis-report.risk-low {
     padding-top: 20px;
   }
 
-  .score-block strong {
+  .score-number strong {
     font-size: clamp(6.5rem, 34vw, 8rem);
   }
 

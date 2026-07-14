@@ -103,7 +103,7 @@ The trained model is saved here:
 training/models/truthshield-image-detector
 ```
 
-The improved trainer now uses realistic crops, color changes, blur, and JPEG recompression, keeps only a few checkpoints, stops when validation stops improving, and evaluates the untouched `test` split automatically.
+The improved trainer now uses realistic crops, color changes, blur, and JPEG recompression, keeps only a few checkpoints, selects the best checkpoint by macro F1 instead of majority-class accuracy, stops when validation stops improving, and evaluates the untouched `test` split automatically.
 
 ## Step 5: Audit And Evaluate It
 
@@ -121,6 +121,14 @@ Run a full independent report for an already-trained model:
 
 The report includes accuracy, balanced accuracy, macro F1, per-class precision/recall, false AI alarms, missed AI images, ROC AUC, calibration error, and example mistakes.
 
+Check a known AI image across JPEG compression, resizing, cropping, and a social-media-style resize/recompression:
+
+```powershell
+.\backend\venv\Scripts\python.exe .\training\check_image_robustness.py "C:\path\to\known-ai-image.png"
+```
+
+This is a regression check, not a substitute for a large generator-separated test set. Keep regression images out of training so the check remains honest.
+
 ## Step 6: Tell TruthShield To Use The Model
 
 In the same terminal where you start the backend:
@@ -135,6 +143,8 @@ cd "C:\Users\rishi\OneDrive\Desktop\Hackathon Project\truthshield-ai\backend"
 Now upload images in TruthShield and check the Detector Opinions section.
 
 TruthShield automatically prefers a valid local `truthshield-image-detector-v3`, then `v2`, then the original model. Setting the environment variable explicitly is still useful when comparing models.
+
+For production, deploy from the repository root with the root `Dockerfile`. Deploying only `backend/` leaves `training/models/truthshield-image-detector-v2` out of the container and forces a weaker fallback. See `DEPLOYMENT.md`.
 
 ## Step 7: What Counts As A Good Model?
 

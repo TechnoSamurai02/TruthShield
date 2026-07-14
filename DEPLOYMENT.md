@@ -3,7 +3,7 @@
 TruthShield AI deploys as two separate services:
 
 - Frontend: Cloudflare Pages from `frontend/`
-- Backend: Hugging Face Spaces Docker Space from `backend/`
+- Backend: Hugging Face Spaces Docker Space from the repository root
 
 ## 1. Deploy The Backend To Hugging Face Spaces
 
@@ -14,18 +14,24 @@ Create a new Hugging Face Space:
 - SDK: Docker
 - Visibility: public or private
 
-The Space root should contain the contents of this repo's `backend/` folder, including `Dockerfile`, `README.md`, `requirements.txt`, `main.py`, `analyzers/`, `models/`, and `utils/`.
+Deploy the **repository root**, not only `backend/`. The root `Dockerfile` copies both the backend and the measured `truthshield-image-detector-v2` model into the image. A backend-only deployment omits the trained model and silently falls back to much weaker generic or heuristic detection.
 
 With Git:
 
 ```powershell
-git clone https://huggingface.co/spaces/<hf-user>/truthshield-ai-backend hf-truthshield-backend
-Copy-Item -Recurse -Force .\backend\* .\hf-truthshield-backend\
-Set-Location .\hf-truthshield-backend
-git add .
-git commit -m "Deploy TruthShield backend"
-git push
+Set-Location "C:\Users\rishi\OneDrive\Desktop\Hackathon Project\truthshield-ai"
+git lfs install
+git remote add hf https://huggingface.co/spaces/<hf-user>/truthshield-ai-backend
+git fetch hf main
+git lfs push --all https://huggingface.co/spaces/<hf-user>/truthshield-ai-backend
+git push hf HEAD:main --force-with-lease
 ```
+
+The last command is intended for the newly created Space. Fetching first makes `--force-with-lease` refuse to overwrite Space changes you have not seen.
+
+The 94 MB `model.safetensors` file is managed by Git LFS. Confirm that the Space contains the actual LFS object, not a small pointer file.
+
+In the Space variables, keep `ENABLE_LOCAL_AI_MODELS=true`. Delete the old `AI_IMAGE_DETECTOR_MODELS=Organika/...` override or leave it blank. The code now keeps a packaged TruthShield model first even if an older override remains, but removing stale configuration makes the deployment easier to audit.
 
 After the Space builds, the backend URL will be:
 
@@ -94,6 +100,7 @@ Open the deployed frontend and run:
 
 - Image and video analysis with representative test files
 - Image upload with a small `.jpg` or `.png`
+- The supplied Midjourney regression image; the report should show the learned detector active and about 99% AI-generated likelihood
 - Health check directly at `/api/health`
 
 If the frontend loads but requests fail, first check:
@@ -102,3 +109,4 @@ If the frontend loads but requests fail, first check:
 - Hugging Face Space build logs
 - Hugging Face Space variable `FRONTEND_ORIGINS`
 - Browser devtools console for CORS or network errors
+- `Technical evidence -> Detector opinions`; if it says only `Local heuristic fallback`, the trained model was not packaged or could not load

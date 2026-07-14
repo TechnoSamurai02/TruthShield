@@ -1,0 +1,9 @@
+.git
+.hf-cache
+backend/venv
+backend/__pycache__
+backend/**/__pycache__
+frontend
+training/.cache
+training/data
+training/models/**/checkpoint-*

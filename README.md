@@ -1,3 +1,11 @@
+---
+title: TruthShield AI Backend
+sdk: docker
+app_port: 7860
+pinned: false
+license: mit
+---
+
 # TruthShield AI
 
 TruthShield AI helps people inspect suspicious images and videos before they trust or share them. It combines available metadata, visual forensics, detector signals, provenance checks, and source research into an explainable, risk-based Truth Score.
@@ -11,7 +19,7 @@ The score is a first-pass risk assessment, not proof that media is real or fake.
 - Drag-and-drop and keyboard-accessible file selection
 - Explainable Truth Score, risk classification, verdict, and summary
 - Warning signs, reassuring signals, and practical safety recommendations
-- Optional local synthetic-media detectors and pixel forensics
+- Packaged, held-out-tested image detector plus supporting pixel forensics
 - Video frame coverage and suspicious-frame evidence
 - Optional C2PA provenance checks and indexed web research
 - Light and dark editorial themes with persisted preference
@@ -102,7 +110,7 @@ WEB_RESEARCH_MONTHLY_LIMIT=150
 GOOGLE_VISION_API_KEY=
 GOOGLE_VISION_MAX_RESULTS=10
 ENABLE_LOCAL_AI_MODELS=true
-AI_IMAGE_DETECTOR_MODELS=Organika/sdxl-detector,dima806/deepfake_vs_real_image_detection
+AI_IMAGE_DETECTOR_MODELS=
 AI_VIDEO_FRAME_DETECTOR_MODELS=
 AI_VIDEO_TEMPORAL_MODEL_PATH=
 VIDEO_ANALYSIS_MODE=exhaustive
@@ -114,7 +122,7 @@ LOCAL_REASONING_BASE_URL=
 
 - Google Cloud Vision Web Detection can provide full, partial, visually similar, and page-level image matches.
 - Brave Search can provide indexed source leads and citations.
-- Local Hugging Face detectors are optional and may download model files when enabled.
+- The root Docker deployment packages `truthshield-image-detector-v2`; its learned output is primary and generic file heuristics are fallback context only.
 - C2PA tools are optional; missing content credentials are a signal, not proof of manipulation.
 
 ## Truth Score

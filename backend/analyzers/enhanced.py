@@ -41,36 +41,72 @@ def enhance_image_result(
 
     evidence = dict(result.get("evidence", {}))
     detector_probability = combined_synthetic_probability(detectors)
+    learned_model_count = completed_model_count(detectors)
+    learned_model_available = learned_model_count > 0
     detector_truth = 50.0 if detector_probability is None else 100.0 - detector_probability * 100.0
     provenance_score = float(provenance["score"]) if provenance else 50.0
     web_score = float(web_research["score"]) if web_research else 50.0
-    recalibrated_score = _weighted_score(
+    scoring_values = {
+        "metadata": evidence.get("metadata_score", 50.0),
+        "visual": evidence.get("visual_consistency_score", result.get("truth_score", 50.0)),
+        "compression": evidence.get("compression_score", 50.0),
+        "forensic": evidence.get("pixel_forensic_score", 50.0),
+        "detector": detector_truth,
+        "provenance": provenance_score,
+        "web": web_score,
+    }
+    # Once a learned detector completes, it is the only signal here that was
+    # actually trained and measured for AI-image classification. Traditional
+    # file/forensic heuristics remain context, but cannot outvote it.
+    scoring_weights = (
         {
-            "metadata": evidence.get("metadata_score", 50.0),
-            "visual": evidence.get("visual_consistency_score", result.get("truth_score", 50.0)),
-            "compression": evidence.get("compression_score", 50.0),
-            "forensic": evidence.get("pixel_forensic_score", 50.0),
-            "detector": detector_truth,
-            "provenance": provenance_score,
-            "web": web_score,
-        },
+            "metadata": 0.02,
+            "visual": 0.015,
+            "compression": 0.015,
+            "forensic": 0.08,
+            "detector": 0.78,
+            "provenance": 0.05,
+            "web": 0.04,
+        }
+        if learned_model_available
+        else
         {
             "metadata": 0.06,
             "visual": 0.08,
             "compression": 0.05,
             "forensic": 0.20,
-            "detector": 0.36,
-            "provenance": 0.10,
-            "web": 0.15,
-        },
+            "detector": 0.20,
+            "provenance": 0.16,
+            "web": 0.25,
+        }
     )
+    recalibrated_score = _weighted_score(scoring_values, scoring_weights)
+    # Without a learned model, generic file heuristics must not produce a
+    # reassuring headline. The UI will explicitly identify fallback-only mode.
+    if not learned_model_available:
+        recalibrated_score = min(59.0, recalibrated_score)
 
     warnings = list(result.get("warnings", []))
     positives = list(result.get("positive_signals", []))
-    if detector_probability is not None and detector_probability >= 0.70:
-        warnings.append("AI detector signals indicate a high likelihood of synthetic or generated imagery.")
+    if learned_model_available and detector_probability is not None and detector_probability >= 0.70:
+        warnings.append("The learned AI-image detector indicates a high likelihood of generated imagery.")
+        positives = [
+            message
+            for message in positives
+            if not any(
+                marker in message
+                for marker in (
+                    "Pixel-level forensic checks",
+                    "JPEG block-boundary artifacts",
+                    "Error-level analysis",
+                    "repeated textured-patch pattern",
+                )
+            )
+        ]
+    elif not learned_model_available:
+        warnings.append("The trained AI-image detector was unavailable; this result uses weaker fallback signals.")
     elif detector_probability is not None and detector_probability <= 0.30:
-        positives.append("AI detector signals did not strongly indicate generated imagery.")
+        positives.append("The learned AI-image detector did not strongly indicate generated imagery.")
     if provenance and provenance["status"] in {"no_manifest", "tool_unavailable"}:
         warnings.append("No verifiable C2PA content credentials were found for this file.")
     elif provenance and provenance["status"] == "verified":
@@ -103,6 +139,12 @@ def enhance_image_result(
             "overall_risk_score": float(100 - final_score),
         }
     )
+    technical["ai_detector_summary"] = {
+        "learned_model_available": learned_model_available,
+        "completed_learned_models": learned_model_count,
+        "synthetic_probability": round(detector_probability, 4) if detector_probability is not None else None,
+        "scoring_mode": "learned_model_primary" if learned_model_available else "heuristic_fallback",
+    }
     result.update(
         {
             "truth_score": final_score,

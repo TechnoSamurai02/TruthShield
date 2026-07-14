@@ -171,7 +171,10 @@ def _build_training_args(TrainingArguments: Any, args: argparse.Namespace) -> An
         "logging_steps": 20,
         "remove_unused_columns": False,
         "load_best_model_at_end": True,
-        "metric_for_best_model": "accuracy",
+        # Optimize the weakest class as well as the majority classes. Plain
+        # accuracy can select a checkpoint that improves camera photos while
+        # regressing AI or edited-image recall.
+        "metric_for_best_model": "macro_f1",
         "greater_is_better": True,
         "report_to": [],
         "save_total_limit": 3,
