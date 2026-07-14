@@ -61,11 +61,12 @@ If you deploy from the CLI:
 ```powershell
 Set-Location .\frontend
 $env:VITE_API_BASE_URL = "https://<hf-user>-truthshield-ai-backend.hf.space"
-npm run build
-npx wrangler login
-npx wrangler pages deploy .\dist --project-name=truthshield-ai-frontend
+npx wrangler whoami
+npm run deploy
 Remove-Item Env:VITE_API_BASE_URL
 ```
+
+Direct-upload Pages projects do not deploy automatically when GitHub changes. Either run the command above after frontend changes or connect the Pages project to this repository with `frontend` as its root directory.
 
 The Pages URL will look like:
 
