@@ -6,7 +6,7 @@ from PIL import Image
 
 from analyzers.ai_detectors import combined_synthetic_probability, completed_model_count, run_image_detectors
 from analyzers.config import get_settings
-from analyzers.feedback import build_custom_feedback
+from analyzers.feedback import build_custom_feedback, build_image_feedback, build_video_feedback
 from analyzers.fingerprints import build_image_fingerprint
 from analyzers.image_decision import assess_image_evidence
 from analyzers.provenance import verify_image_provenance
@@ -146,16 +146,7 @@ def enhance_image_result(
             "assessment": assessment,
         }
     )
-    result["custom_feedback"] = {
-        "headline": assessment["label"],
-        "explanation": assessment["reason"],
-        "evidence_notes": [
-            *assessment["evidence_supporting_authenticity"],
-            *assessment["evidence_raising_concern"],
-            *assessment["limitations"][:2],
-        ][:6],
-        "next_steps": result.get("recommendations", [])[:3],
-    }
+    result["custom_feedback"] = build_image_feedback(assessment, result.get("recommendations", []))
     return result
 
 
@@ -226,6 +217,20 @@ def enhance_video_result(
         if frame.get("detectors")
     ]
     frame_probabilities = [probability for probability in frame_probabilities if probability is not None]
+    learned_frame_model_names = {
+        str(detector.get("name") or "")
+        for frame in frame_results
+        for detector in (frame.get("detectors", []) if isinstance(frame.get("detectors"), list) else [])
+        if detector.get("status") == "completed"
+        and detector.get("name") != "local_heuristic_synthetic_likelihood"
+        and isinstance(detector.get("synthetic_probability"), (int, float))
+    }
+    learned_frame_model_count = len(learned_frame_model_names)
+    learned_frame_signal_count = sum(
+        completed_model_count(frame.get("detectors", [])) > 0
+        for frame in frame_results
+        if isinstance(frame.get("detectors"), list)
+    )
     technical = result.get("technical_details") or {}
     temporal_forensics = technical.get("temporal_forensics") or {}
     summarized_probability = temporal_forensics.get("frame_ai_probability")
@@ -239,11 +244,21 @@ def enhance_video_result(
         "synthetic_probability": summarized_probability,
         "details": {
             "frames_with_detector_signals": len(frame_probabilities),
+            "frames_with_learned_detector_signals": learned_frame_signal_count,
             "frames_analyzed": result.get("frames_analyzed", len(frame_results)),
+            "learned_model_available": learned_frame_model_count > 0,
+            "model_type": "learned_frame_aggregate" if learned_frame_model_count > 0 else "heuristic_frame_aggregate",
             "note": "Frame evidence uses a robust mean, upper percentile, high-risk ratio, and sustained-run ratio instead of trusting one isolated frame.",
         },
     }
     detectors = [frame_summary_detector, *(video_detectors or result.get("detectors", []))]
+    trained_video_model_available = any(
+        detector.get("name") == "trained_truthshield_video_detector"
+        and detector.get("status") == "completed"
+        and isinstance(detector.get("synthetic_probability"), (int, float))
+        for detector in detectors
+    )
+    learned_model_available = learned_frame_model_count > 0 or trained_video_model_available
     weighted_probabilities: List[tuple[float, float]] = []
     if isinstance(summarized_probability, (int, float)):
         weighted_probabilities.append((float(summarized_probability), 1.25))
@@ -290,6 +305,13 @@ def enhance_video_result(
             "overall_risk_score": float(100 - final_score),
         }
     )
+    technical["ai_detector_summary"] = {
+        "learned_model_available": learned_model_available,
+        "completed_learned_models": learned_frame_model_count + int(trained_video_model_available),
+        "synthetic_probability": round(detector_probability, 4) if learned_model_available and detector_probability is not None else None,
+        "fallback_heuristic_score": round(detector_probability, 4) if not learned_model_available and detector_probability is not None else None,
+        "scoring_mode": "video_frame_and_temporal_evidence",
+    }
     result.update(
         {
             "truth_score": final_score,
@@ -299,22 +321,26 @@ def enhance_video_result(
             "warnings": unique_messages(warnings),
             "positive_signals": unique_messages(positives),
             "evidence": evidence,
+            "technical_details": technical,
             "analysis_mode": _analysis_mode(web_research),
-            "confidence": _confidence(detectors, None, web_research),
+            "confidence": _confidence(
+                detectors,
+                None,
+                web_research,
+                learned_model_available=learned_model_available,
+            ),
             "detectors": detectors,
             "provenance": None,
             "web_research": web_research,
             "citations": web_research.get("citations", []),
         }
     )
-    result["custom_feedback"] = build_custom_feedback(
-        "video",
-        final_score,
+    result["custom_feedback"] = build_video_feedback(
+        detector_probability,
+        learned_model_available,
         result["warnings"],
         result["positive_signals"],
-        detectors,
-        None,
-        web_research,
+        result.get("recommendations", []),
     )
     return result
 
@@ -372,9 +398,11 @@ def _confidence(
     detectors: List[Dict[str, Any]],
     provenance: Dict[str, Any] | None,
     web_research: Dict[str, Any] | None,
+    learned_model_available: bool | None = None,
 ) -> float:
     confidence = 0.45
-    if completed_model_count(detectors) > 0:
+    has_learned_model = completed_model_count(detectors) > 0 if learned_model_available is None else learned_model_available
+    if has_learned_model:
         confidence += 0.18
     elif any(detector.get("status") == "completed" for detector in detectors):
         confidence += 0.08

@@ -7,6 +7,191 @@ from typing import Any, Dict, List
 from analyzers.config import get_settings
 
 
+def build_image_feedback(
+    assessment: Dict[str, Any],
+    recommendations: List[str],
+) -> Dict[str, Any]:
+    """Turn image evidence into cautious language for a general audience."""
+    verdict = str(assessment.get("verdict") or "inconclusive")
+    signals = assessment.get("signals") if isinstance(assessment.get("signals"), list) else []
+    reasons_ai: List[str] = []
+    reasons_not_ai: List[str] = []
+    learned_detector_available = False
+
+    for value in signals:
+        if not isinstance(value, dict):
+            continue
+        source = str(value.get("source") or "")
+        signal = str(value.get("signal") or "")
+        status = str(value.get("status") or "")
+        raw_score = value.get("raw_score")
+
+        if source == "dedicated_detector":
+            learned_detector_available = status == "completed" and isinstance(raw_score, (int, float))
+            if signal == "ai_generated_or_manipulated":
+                reasons_ai.append(
+                    "The trained image model found a very strong match with patterns it learned from AI-generated images."
+                )
+            elif signal == "authentic":
+                reasons_not_ai.append(
+                    "The trained image model found very little resemblance to the AI-generated images it learned from."
+                )
+            elif learned_detector_available and float(raw_score) >= 0.5:
+                reasons_ai.append(
+                    "The image model noticed some AI-like patterns, but the signal was not strong enough to call the image AI-generated."
+                )
+            elif learned_detector_available:
+                reasons_not_ai.append(
+                    "The image model leaned away from AI generation, but not strongly enough to call the image authentic."
+                )
+        elif source == "metadata" and signal == "ai_generated_or_manipulated":
+            reasons_ai.append("The file says it was saved by AI-generation software.")
+        elif source == "metadata" and signal == "authentic":
+            reasons_not_ai.append(
+                "The file includes camera make or model information. This supports a camera origin, although metadata can be changed."
+            )
+        elif source == "pixel_forensics" and signal == "ai_generated_or_manipulated":
+            reasons_ai.append(
+                "A separate pixel check found unusual patterns sometimes seen in AI images. Editing and compression can cause similar patterns."
+            )
+        elif source == "provenance" and signal == "authentic":
+            reasons_not_ai.append("The file includes verifiable content credentials that help trace where it came from.")
+        elif source == "web_context" and signal == "authentic":
+            reasons_not_ai.append(
+                "A matching or closely related version was found online, which gives the image more real-world context."
+            )
+
+    if verdict == "likely_ai_generated_or_manipulated" and reasons_ai:
+        headline = "This image may be AI-generated or altered"
+        summary = (
+            "The strongest available checks point toward AI generation or meaningful digital alteration. "
+            "This is a warning, not proof."
+        )
+        uncertainty_note = (
+            "A real photo that was heavily edited, compressed, or saved as a screenshot can sometimes look "
+            "AI-made to a detector."
+        )
+    elif not learned_detector_available:
+        summary = (
+            "The trained image detector did not return a usable result. The remaining checks are not strong enough "
+            "to decide whether this image is AI-generated."
+        )
+        headline = "We cannot reliably tell"
+        uncertainty_note = (
+            "Only weaker clues were available. Missing metadata, ordinary editing, compression, or no web match "
+            "cannot prove that an image is AI-generated."
+        )
+    elif verdict == "likely_authentic":
+        headline = "This image appears more likely to be a real photograph"
+        summary = (
+            "The strongest available checks lean away from AI generation, and no separate strong AI clue was found. "
+            "This does not guarantee that the image is authentic or unedited."
+        )
+        uncertainty_note = (
+            "New or unfamiliar AI tools can make images the model does not recognize. A likely-authentic result "
+            "also cannot prove that the image's caption or story is true."
+        )
+    else:
+        headline = "We cannot tell with enough confidence"
+        summary = (
+            "The available checks were mixed, missing, or not strong enough to support either an AI-generated "
+            "or an authentic result."
+        )
+        uncertainty_note = (
+            "Inconclusive does not mean a 50% chance of AI. It means the system is choosing not to guess from weak "
+            "or conflicting clues."
+        )
+
+    next_steps = _plain_media_next_steps(recommendations)
+    return {
+        "headline": headline,
+        "explanation": summary,
+        "plain_language_summary": summary,
+        "reasons_it_might_be_ai": _unique_strings(reasons_ai)[:4],
+        "reasons_it_might_not_be_ai": _unique_strings(reasons_not_ai)[:4],
+        "uncertainty_note": uncertainty_note,
+        "evidence_notes": [*_unique_strings(reasons_ai), *_unique_strings(reasons_not_ai)][:6],
+        "next_steps": next_steps,
+    }
+
+
+def build_video_feedback(
+    detector_probability: float | None,
+    learned_model_available: bool,
+    warnings: List[str],
+    positives: List[str],
+    recommendations: List[str],
+) -> Dict[str, Any]:
+    """Explain the video estimate without presenting a model score as proof."""
+    reasons_ai: List[str] = []
+    reasons_not_ai: List[str] = []
+
+    if not learned_model_available or detector_probability is None:
+        headline = "No reliable AI verdict for this video"
+        summary = (
+            "A trained video or frame detector did not return a usable result. Basic file and motion checks ran, "
+            "but they are not reliable enough to decide whether this video is AI-generated."
+        )
+        uncertainty_note = (
+            "Fallback motion and pixel checks can react to animation, video editing, low quality, screen recording, "
+            "or heavy compression. They should not be used as proof."
+        )
+    else:
+        probability = max(0.0, min(1.0, float(detector_probability)))
+        if probability >= 0.90:
+            headline = "This video may be AI-generated"
+            summary = (
+                "The trained video checks found a very strong AI-like pattern across the analyzed frames and motion. "
+                "This is a warning, not proof."
+            )
+            reasons_ai.append(
+                "The trained model found a strong, repeated match with patterns learned from AI-generated videos."
+            )
+        elif probability <= 0.15:
+            headline = "This video appears less likely to be AI-generated"
+            summary = (
+                "The trained video checks found a low AI signal across the analyzed frames and motion. "
+                "This does not prove the video is real or unedited."
+            )
+            reasons_not_ai.append(
+                "The trained model found very little resemblance to the AI-generated videos it learned from."
+            )
+        else:
+            headline = "We cannot tell with enough confidence"
+            summary = (
+                "The trained video checks did not produce a strong enough signal for a reliable AI or non-AI result."
+            )
+            if probability >= 0.50:
+                reasons_ai.append(
+                    "Some analyzed frames or motion patterns looked AI-like, but the pattern was not strong enough for a reliable warning."
+                )
+            else:
+                reasons_not_ai.append(
+                    "The model leaned away from AI generation, but not strongly enough to call the video camera-recorded."
+                )
+        uncertainty_note = (
+            "Video detectors can be confused by animation, filters, fast motion, editing, screen recordings, and "
+            "compression. A result also cannot prove that the video's caption or story is true."
+        )
+
+    if any("sustained share" in warning.lower() for warning in warnings):
+        reasons_ai.append("AI-like or unusual patterns appeared across several analyzed frames, not only one frame.")
+    if any("did not show strong synthetic-video signals" in positive.lower() for positive in positives):
+        reasons_not_ai.append("The frame and motion checks did not find a strong repeated AI pattern.")
+
+    next_steps = _plain_media_next_steps(recommendations)
+    return {
+        "headline": headline,
+        "explanation": summary,
+        "plain_language_summary": summary,
+        "reasons_it_might_be_ai": _unique_strings(reasons_ai)[:4],
+        "reasons_it_might_not_be_ai": _unique_strings(reasons_not_ai)[:4],
+        "uncertainty_note": uncertainty_note,
+        "evidence_notes": [*_unique_strings(reasons_ai), *_unique_strings(reasons_not_ai)][:6],
+        "next_steps": next_steps,
+    }
+
+
 def build_custom_feedback(
     content_label: str,
     score: int,
@@ -170,3 +355,23 @@ def _string_list(value: Any) -> List[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if str(item).strip()]
+
+
+def _plain_media_next_steps(recommendations: List[str]) -> List[str]:
+    defaults = [
+        "If this content affects an important decision, do not rely on this result alone.",
+        "Look for the original uploader and check whether a trusted source shows the same content in context.",
+        "Use a reverse-image search on the image or on a clear video frame before sharing it.",
+    ]
+    return _unique_strings([*defaults, *recommendations])[:3]
+
+
+def _unique_strings(values: List[str]) -> List[str]:
+    seen = set()
+    result = []
+    for value in values:
+        cleaned = str(value).strip()
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            result.append(cleaned)
+    return result

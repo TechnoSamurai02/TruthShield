@@ -197,6 +197,25 @@ function generationRiskClass(result: AnalysisResult, likelihood: number | null, 
   return "risk-trust";
 }
 
+function plainConfidence(value?: string): string {
+  if (value === "high") return "High";
+  if (value === "moderate") return "Medium";
+  return "Low";
+}
+
+function feedbackReasons(result: AnalysisResult, side: "ai" | "not-ai"): string[] {
+  const customReasons = side === "ai"
+    ? result.custom_feedback?.reasons_it_might_be_ai
+    : result.custom_feedback?.reasons_it_might_not_be_ai;
+  if (customReasons) return customReasons;
+  if (result.assessment) {
+    return side === "ai"
+      ? result.assessment.evidence_raising_concern
+      : result.assessment.evidence_supporting_authenticity;
+  }
+  return side === "ai" ? result.warnings : result.positive_signals;
+}
+
 function ReportSection({ index, title, tone, children }: { index: string; title: string; tone?: string; children: ReactNode }) {
   return (
     <section className={`report-section${tone ? ` ${tone}` : ""}`}>
@@ -253,6 +272,9 @@ function TechnicalEvidence({ result }: { result: AnalysisResult }) {
   const primitiveDetails = Object.entries(result.technical_details ?? {}).filter(([, value]) =>
     ["string", "number", "boolean"].includes(typeof value)
   );
+  const evidenceEntries = Object.entries(result.evidence ?? {}).filter(
+    ([key]) => !result.assessment || key !== "overall_risk_score"
+  );
   const forensicNotes = forensic
     ? [
         detailInterpretation(forensic.noise_residual),
@@ -276,6 +298,18 @@ function TechnicalEvidence({ result }: { result: AnalysisResult }) {
         </dl>
       </section>
 
+      {evidenceEntries.length ? (
+        <section className="technical-group">
+          <h3>Raw evidence metrics</h3>
+          <p>These are internal model and file-check scores. They are not real-world probabilities.</p>
+          <dl className="metric-list">
+            {evidenceEntries.map(([key, rawValue]) => (
+              <div key={key}><dt>{evidenceLabel(key)}</dt><dd>{Math.round(Number(rawValue) || 0)}</dd></div>
+            ))}
+          </dl>
+        </section>
+      ) : null}
+
       {result.assessment?.signals?.length ? (
         <section className="technical-group">
           <h3>Decision signals</h3>
@@ -288,17 +322,6 @@ function TechnicalEvidence({ result }: { result: AnalysisResult }) {
               </div>
             ))}
           </div>
-        </section>
-      ) : null}
-
-      {result.custom_feedback ? (
-        <section className="technical-group">
-          <h3>Analysis notes</h3>
-          <p className="technical-lead">{result.custom_feedback.headline}</p>
-          <p>{result.custom_feedback.explanation}</p>
-          {result.custom_feedback.next_steps.length ? (
-            <FindingList items={result.custom_feedback.next_steps} emptyMessage="" />
-          ) : null}
         </section>
       ) : null}
 
@@ -410,23 +433,36 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
   { result, completedAt, onNewAnalysis },
   ref
 ) {
-  const evidenceEntries = Object.entries(result.evidence ?? {}).filter(
-    ([key]) => !result.assessment || key !== "overall_risk_score"
-  );
   const generationLikelihood = aiDetectorScore(result);
   const learnedAvailable = learnedDetectorAvailable(result);
   const generationResult = generationVerdict(generationLikelihood, learnedAvailable);
   const assessment = result.assessment ?? null;
-  const headline = assessment?.label ?? generationResult.headline;
+  const headline = result.custom_feedback?.headline ?? assessment?.label ?? generationResult.headline;
+  const plainSummary = result.custom_feedback?.plain_language_summary
+    ?? result.custom_feedback?.explanation
+    ?? assessment?.reason
+    ?? result.summary;
+  const reasonsItMightBeAi = feedbackReasons(result, "ai");
+  const reasonsItMightNotBeAi = feedbackReasons(result, "not-ai");
+  const uncertaintyNote = result.custom_feedback?.uncertainty_note
+    ?? "This result is an estimate, not proof. Editing, compression, screenshots, and unfamiliar AI tools can change the clues the system uses.";
+  const nextSteps = result.custom_feedback?.next_steps?.length
+    ? result.custom_feedback.next_steps
+    : result.recommendations;
+  const showModelScore = learnedAvailable && generationLikelihood !== null;
   const verdictDetail = assessment
-    ? `${formatLabel(assessment.confidence)} decision confidence · three-way evidence assessment`
-    : generationResult.detail;
+    ? `${plainConfidence(assessment.confidence)} result strength · based on the available checks`
+    : showModelScore
+      ? "Model estimate only · not a percent chance or proof"
+      : generationResult.detail;
   const technicalPreview = [
-    generationLikelihood !== null ? `${Math.round(generationLikelihood)}% raw AI-class score` : null,
+    generationLikelihood !== null
+      ? `${Math.round(generationLikelihood)}% ${showModelScore ? "raw AI-class score" : "fallback signal"}`
+      : null,
     learnedAvailable ? "learned detector active" : "fallback only",
     typeof result.frames_analyzed === "number" ? `${result.frames_analyzed.toLocaleString()} frames` : null,
     result.suspicious_frames?.length ? `${result.suspicious_frames.length} suspicious samples` : null,
-    result.detectors?.length ? `${result.detectors.length} detector opinions` : null
+    result.detectors?.length ? `${result.detectors.length} detector outputs` : null
   ].filter((item): item is string => Boolean(item));
   const analyzedAt = new Intl.DateTimeFormat(undefined, {
     month: "short",
@@ -451,65 +487,49 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
 
       <div className="score-summary">
         <div className="score-block">
-          <span>{assessment ? "Decision confidence" : "AI detector score"}</span>
+          <span>{assessment ? "Result strength" : (showModelScore ? "AI model signal" : "Model status")}</span>
           <div className={`score-number${assessment ? " decision-word" : ""}`}>
-            <strong>{assessment ? formatLabel(assessment.confidence) : (generationLikelihood === null ? "—" : Math.round(generationLikelihood))}</strong>
-            {assessment || generationLikelihood === null ? null : <span>%</span>}
+            <strong>{assessment ? plainConfidence(assessment.confidence) : (showModelScore ? Math.round(generationLikelihood ?? 0) : "—")}</strong>
+            {assessment || !showModelScore ? null : <span>%</span>}
           </div>
-          <small>{assessment ? "Not a probability" : (learnedAvailable ? "Raw model score" : "Heuristic fallback")}</small>
+          <small>{assessment ? "How strongly the checks support this result" : (showModelScore ? "Raw model score — not probability" : "Fallback checks only")}</small>
         </div>
         <div className="verdict-block">
           <h1 id="report-heading">{headline}</h1>
           <p className="verdict">{verdictDetail}</p>
-          <p className="report-summary">{assessment?.reason ?? result.summary}</p>
+          <p className="report-summary">Review both sides below before making an important decision.</p>
         </div>
       </div>
 
-      <ReportSection index="01" title="Verdict basis">
-        {assessment ? <p className="assessment-reason">{assessment.reason}</p> : null}
-        {evidenceEntries.length ? (
-          <dl className="evidence-list">
-            {evidenceEntries.map(([key, rawValue]) => (
-              <div key={key}>
-                <dt>{evidenceLabel(key)}</dt>
-                <dd>{Math.round(Number(rawValue) || 0)}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : <p className="empty-finding">No evidence metrics were returned.</p>}
-        {result.custom_feedback?.evidence_notes.length ? (
-          <FindingList items={result.custom_feedback.evidence_notes} emptyMessage="" />
-        ) : null}
+      <ReportSection index="01" title="What this result means">
+        <p className="plain-language-summary">{plainSummary}</p>
+        <p className="plain-language-note">
+          AI detectors compare patterns. They do not know for certain who or what made the file, and a model score is not the percent chance that the result is correct.
+        </p>
       </ReportSection>
 
-      <ReportSection index="02" title="Evidence supporting authenticity" tone="positive-section">
+      <ReportSection index="02" title="Why it might be AI" tone="warning-section">
         <FindingList
-          items={assessment?.evidence_supporting_authenticity ?? result.positive_signals}
-          emptyMessage="No strong authenticity evidence was available. This does not count against the image."
+          items={reasonsItMightBeAi}
+          emptyMessage="We did not find a strong, reliable reason on this side. That does not prove the content is real."
         />
       </ReportSection>
 
-      <ReportSection index="03" title="Evidence raising concern" tone="warning-section">
+      <ReportSection index="03" title="Why it might not be AI" tone="positive-section">
         <FindingList
-          items={assessment?.evidence_raising_concern ?? result.warnings}
-          emptyMessage="No independent positive evidence of AI generation or manipulation was found."
+          items={reasonsItMightNotBeAi}
+          emptyMessage="We did not find a strong, reliable reason on this side. That does not prove the content is AI-generated."
         />
       </ReportSection>
 
-      <ReportSection index="04" title="Important limitations">
-        <FindingList
-          items={assessment?.limitations ?? [result.disclaimer]}
-          emptyMessage="No additional limitations were returned."
-        />
+      <ReportSection index="04" title="What could make this result wrong">
+        <p className="uncertainty-note">{uncertaintyNote}</p>
       </ReportSection>
 
-      <ReportSection index="05" title="Safety recommendation">
-        {result.recommendations.length ? (
+      <ReportSection index="05" title="What to do next">
+        {nextSteps.length ? (
           <div className="recommendation-copy">
-            <p>{result.recommendations[0]}</p>
-            {result.recommendations.length > 1 ? (
-              <ol>{result.recommendations.slice(1).map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ol>
-            ) : null}
+            <ol>{nextSteps.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ol>
           </div>
         ) : <p className="empty-finding">Verify important claims with trusted, independent sources.</p>}
       </ReportSection>

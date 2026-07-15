@@ -57,6 +57,10 @@ class WebResearchResult(BaseModel):
 class CustomFeedback(BaseModel):
     headline: str
     explanation: str
+    plain_language_summary: Optional[str] = None
+    reasons_it_might_be_ai: List[str] = Field(default_factory=list)
+    reasons_it_might_not_be_ai: List[str] = Field(default_factory=list)
+    uncertainty_note: Optional[str] = None
     evidence_notes: List[str] = Field(default_factory=list)
     next_steps: List[str] = Field(default_factory=list)
 

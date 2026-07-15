@@ -1,5 +1,153 @@
 # TruthShield Video Detector: Every Step
 
+## Start Here: The Dataset Is Ready
+
+As of July 15, 2026, the local AIGVDBench sample is ready at:
+
+```text
+training/data/video_source
+```
+
+It contains 1,120 videos with an exactly balanced class split:
+
+| Split | AI-generated | Real | Generator/source policy |
+| --- | ---: | ---: | --- |
+| Train | 400 | 400 | Open-Sora T2V, AnimateDiff T2V, SVD I2V, CogVideoX 1.5 V2V, and LTX V2V |
+| Validation | 80 | 80 | HunyuanVideo T2V and EasyAnimate I2V; not used for fitting |
+| Test | 80 | 80 | Pika held out as an unseen AI generator family |
+
+The manifest is `training/data/video_source/aigvdbench_manifest.csv`. It records the source URL, archive member, split, label, generator/source, CC-BY-4.0 license, byte size, and SHA-256 checksum. All 1,120 local videos were checked: no missing files, size mismatches, hash mismatches, or duplicate hashes were found.
+
+The extracted 16-frame-per-video dataset and neural embedding cache also already exist:
+
+```text
+training/data/video_frames                       17,920 JPEG frames
+training/data/video_frame_embeddings/train.npz  cached training embeddings
+training/data/video_frame_embeddings/validation.npz
+training/data/video_frame_embeddings/test.npz
+```
+
+Do not download the dataset or extract the frames again for the first run below. Do not move files between splits. The test split must remain untouched until the final evaluation.
+
+## Train A Safe Candidate Now
+
+This computer has CPU-only PyTorch, so the following workflow reuses the cached 2,048-dimensional ResNet embeddings. It trains a new regularized frame head and temporal model without overwriting the models currently used by the app.
+
+Open PowerShell and run these commands from the repository root:
+
+```powershell
+cd "C:\Users\rishi\OneDrive\Desktop\Hackathon Project\truthshield-ai"
+```
+
+### 1. Train a candidate frame detector
+
+```powershell
+.\backend\venv\Scripts\python.exe .\training\train_video_frame_detector.py `
+  --data-dir .\training\data\video_frames `
+  --base-model .\training\models\truthshield-image-detector-v2 `
+  --output-dir .\training\models\truthshield-video-frame-detector-v2 `
+  --embedding-dir .\training\data\video_frame_embeddings `
+  --batch-size 32 `
+  --seed 42
+```
+
+Expected behavior:
+
+- It should load the three existing `.npz` embedding caches instead of running ResNet over all 17,920 frames again.
+- It fits several regularized logistic heads using only `train`.
+- It selects regularization and the video decision threshold using `validation`.
+- It evaluates `test` once and writes `training/models/truthshield-video-frame-detector-v2/truthshield_video_frame_metrics.json`.
+
+Do not add `--rebuild-embeddings` unless the frame images or base image model changed.
+
+### 2. Rebuild temporal features with the candidate head
+
+```powershell
+.\backend\venv\Scripts\python.exe .\training\build_video_features_from_frame_cache.py `
+  --frame-dir .\training\data\video_frames `
+  --embedding-dir .\training\data\video_frame_embeddings `
+  --frame-model .\training\models\truthshield-video-frame-detector-v2 `
+  --output .\training\data\video_features_v2.jsonl
+```
+
+This creates one ordered feature record for each of the 1,120 source videos. It combines the candidate frame probabilities with luma, noise, edge, optical-flow, duplicate-frame, and scene-cut signals.
+
+### 3. Train a candidate temporal detector
+
+```powershell
+.\backend\venv\Scripts\python.exe .\training\train_video_detector.py `
+  --features .\training\data\video_features_v2.jsonl `
+  --output .\training\models\truthshield-video-temporal-v2.joblib `
+  --trees 600 `
+  --max-depth 14 `
+  --min-samples-leaf 2 `
+  --seed 42 `
+  --exclude-features pixel_forensic_probability_mean,pixel_forensic_probability_p95,frame_truth_score_mean,frame_truth_score_std,frame_truth_score_p10
+```
+
+The trainer compares regularized logistic regression, Random Forest, Extra Trees, and histogram gradient boosting on validation data. It writes the chosen model to `truthshield-video-temporal-v2.joblib` and the complete report to `truthshield-video-temporal-v2.metrics.json`.
+
+### 4. Compare the candidate with the current baseline
+
+The current held-out 160-video test baseline is:
+
+| Metric | Current result |
+| --- | ---: |
+| Balanced accuracy | 78.75% |
+| ROC-AUC | 0.878906 |
+| AI recall | 88.75% (71/80) |
+| Real specificity | 68.75% (55/80) |
+| False AI warnings | 25/80 real videos |
+| Missed AI videos | 9/80 AI videos |
+
+Read the candidate report:
+
+```powershell
+$candidate = Get-Content .\training\models\truthshield-video-temporal-v2.metrics.json -Raw | ConvertFrom-Json
+$candidate.metrics.test | Format-List balanced_accuracy,roc_auc,precision,recall,specificity,f1,false_ai_alarm,missed_ai,brier_score,expected_calibration_error
+```
+
+Do not deploy the candidate merely because one number increased. Require lower false-AI warnings, no serious loss of AI recall, and equal or better calibration. A useful safety target for the next data cycle is at most 8 false warnings out of 80 real test videos (90% specificity) while keeping AI recall at or above 85%.
+
+With the same videos, frames, base model, and seed, this run will probably reproduce the existing result. That proves the training pipeline is working, but it is not evidence of a more accurate model.
+
+## Make The Next Run Genuinely Better
+
+Accuracy improvements must come from broader, carefully matched data rather than repeatedly tuning against the Pika test set.
+
+1. Leave the existing 160-video test split locked. Never use it to choose features, hyperparameters, or thresholds.
+2. Add at least 400 hard real videos to `train/real_camera`: animation, CGI, game footage, screen recordings, sports, water, smoke, reflections, low light, camera shake, filters, transitions, and heavily compressed phone videos.
+3. Add an equal number of AI videos to `train/ai_generated` from generator families not already represented in training. Include text-to-video, image-to-video, and video-to-video output.
+4. Add at least 100 real and 100 AI videos from separate source groups to validation. Do not reuse originals, clips, or transformations from training.
+5. Create a new locked challenge test with at least 200 real and 200 AI videos from sources and AI generator families absent from train and validation.
+6. Match duration, resolution, aspect ratio, frame rate, codec, and compression between classes. Apply crops, captions, resizing, speed changes, and recompression to both classes.
+7. Keep every clip and transformation derived from one original video in the same split.
+8. Record each file's origin, license, generator/camera source, transformation, split, SHA-256 hash, duration, frame rate, resolution, and codec in a manifest.
+
+After adding data, extract a new frame set and rebuild embeddings so the current reproducible cache stays intact:
+
+```powershell
+.\backend\venv\Scripts\python.exe .\training\prepare_video_frames.py `
+  --source-dir .\training\data\video_source_v2 `
+  --output-dir .\training\data\video_frames_v2 `
+  --frame-stride 1 `
+  --max-frames-per-video 16 `
+  --jpeg-quality 92 `
+  --workers 1 `
+  --clean-output
+
+.\backend\venv\Scripts\python.exe .\training\train_video_frame_detector.py `
+  --data-dir .\training\data\video_frames_v2 `
+  --base-model .\training\models\truthshield-image-detector-v2 `
+  --output-dir .\training\models\truthshield-video-frame-detector-v3 `
+  --embedding-dir .\training\data\video_frame_embeddings_v2 `
+  --batch-size 32 `
+  --seed 42 `
+  --rebuild-embeddings
+```
+
+Then repeat the temporal feature and training steps with `v3` paths. Run the new challenge test only after model and threshold choices are frozen. If you inspect its failures and change the model, that challenge set becomes development data and you need a new final test.
+
 This guide assumes you are using Windows PowerShell and the project is here:
 
 ```text

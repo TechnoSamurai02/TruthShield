@@ -41,6 +41,10 @@ export interface WebResearchResult {
 export interface CustomFeedback {
   headline: string;
   explanation: string;
+  plain_language_summary?: string | null;
+  reasons_it_might_be_ai?: string[];
+  reasons_it_might_not_be_ai?: string[];
+  uncertainty_note?: string | null;
   evidence_notes: string[];
   next_steps: string[];
 }

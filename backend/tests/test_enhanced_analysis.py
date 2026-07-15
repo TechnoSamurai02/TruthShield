@@ -13,6 +13,7 @@ import numpy as np
 from PIL import Image
 
 from analyzers.enhanced import enhance_image_result, enhance_video_result
+from analyzers.feedback import build_image_feedback
 from analyzers.ai_detectors import (
     _covering_tiles,
     _normalize_outputs,
@@ -98,7 +99,12 @@ class EnhancedAnalysisTests(unittest.TestCase):
         self.assertIn("ai_generation_score", enhanced["evidence"])
         self.assertTrue(enhanced["technical_details"]["ai_detector_summary"]["learned_model_available"])
         self.assertEqual(enhanced["assessment"]["verdict"], "likely_ai_generated_or_manipulated")
-        self.assertTrue(enhanced["custom_feedback"]["headline"])
+        feedback = enhanced["custom_feedback"]
+        self.assertEqual(feedback["headline"], "This image may be AI-generated or altered")
+        self.assertIn("warning, not proof", feedback["plain_language_summary"])
+        self.assertTrue(any("trained image model" in item for item in feedback["reasons_it_might_be_ai"]))
+        self.assertIn("reasons_it_might_not_be_ai", feedback)
+        self.assertTrue(feedback["uncertainty_note"])
         AnalysisResponse(**enhanced)
 
     def test_web_research_skips_without_brave_key(self) -> None:
@@ -254,6 +260,9 @@ class EnhancedAnalysisTests(unittest.TestCase):
             enhanced_video = enhance_video_result(video_result, [frame_result], "sample.mp4")
 
         self.assertEqual(frame_result["content_type"], "video_frame")
+        self.assertFalse(enhanced_video["technical_details"]["ai_detector_summary"]["learned_model_available"])
+        self.assertEqual(enhanced_video["custom_feedback"]["headline"], "No reliable AI verdict for this video")
+        self.assertIn("not reliable enough", enhanced_video["custom_feedback"]["plain_language_summary"])
         VideoAnalysisResponse(**enhanced_video)
 
     def test_exhaustive_video_mode_analyzes_every_decoded_frame(self) -> None:
@@ -523,6 +532,9 @@ class EnhancedAnalysisTests(unittest.TestCase):
 
         self.assertEqual(assessment["verdict"], "likely_ai_generated_or_manipulated")
         self.assertTrue(any("ComfyUI" in item for item in assessment["evidence_raising_concern"]))
+        feedback = build_image_feedback(assessment, [])
+        self.assertEqual(feedback["headline"], "This image may be AI-generated or altered")
+        self.assertTrue(any("AI-generation software" in item for item in feedback["reasons_it_might_be_ai"]))
 
     def test_invalid_and_unknown_model_outputs_do_not_become_ai_scores(self) -> None:
         normalized = _normalize_outputs(
