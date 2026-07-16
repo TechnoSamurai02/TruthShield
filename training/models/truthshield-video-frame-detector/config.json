@@ -49,5 +49,5 @@
   "truthshield_preprocess_max_dimension": 384,
   "truthshield_training_frame_encoding": "opencv_jpeg_95",
   "truthshield_training_method": "frozen_resnet_embeddings_regularized_logistic_head",
-  "truthshield_video_threshold": 0.415
+  "truthshield_video_threshold": 0.455
 }

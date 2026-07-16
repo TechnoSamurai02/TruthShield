@@ -4,7 +4,7 @@ For the full beginner-friendly video workflow, use [VIDEO_TRAINING_GUIDE.md](./V
 
 For the recommended next accuracy cycle for both models, including current baselines and exact commands, use [ACCURACY_IMPROVEMENT_PLAN.md](./ACCURACY_IMPROVEMENT_PLAN.md).
 
-The video workflow now includes `prepare_aigvdbench_sample.py`, which builds a balanced 1,120-video sample directly from the official CC-BY-4.0 AIGVDBench archives using resumable HTTP ranges. It covers T2V, I2V, and V2V training families, generator-separated validation, and a closed-source Pika test family without downloading the complete benchmark.
+The video workflow now includes `prepare_aigvdbench_sample.py`, which built the balanced 2,080-video dataset used by the packaged video models directly from the official CC-BY-4.0 AIGVDBench archives using resumable HTTP ranges. It contains 1,600 training videos, 320 generator-separated validation videos, and an unchanged 160-video closed-source Pika/real test split. It covers T2V, I2V, and V2V families without downloading the complete benchmark.
 
 `train_video_frame_detector.py` provides the CPU training path: cached ResNet forensic embeddings plus validation-selected regularized heads exported back into a standard Hugging Face image-classification model.
 

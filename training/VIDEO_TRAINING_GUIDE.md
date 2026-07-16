@@ -2,34 +2,34 @@
 
 ## Start Here: The Dataset Is Ready
 
-As of July 15, 2026, the local AIGVDBench sample is ready at:
+As of July 16, 2026, the local AIGVDBench sample is ready at:
 
 ```text
 training/data/video_source
 ```
 
-It contains 1,120 videos with an exactly balanced class split:
+It contains 2,080 videos with an exactly balanced class split:
 
 | Split | AI-generated | Real | Generator/source policy |
 | --- | ---: | ---: | --- |
-| Train | 400 | 400 | Open-Sora T2V, AnimateDiff T2V, SVD I2V, CogVideoX 1.5 V2V, and LTX V2V |
-| Validation | 80 | 80 | HunyuanVideo T2V and EasyAnimate I2V; not used for fitting |
+| Train | 800 | 800 | Open-Sora T2V, AnimateDiff T2V, SVD I2V, CogVideoX 1.5 V2V, and LTX V2V |
+| Validation | 160 | 160 | HunyuanVideo T2V and EasyAnimate I2V; not used for fitting |
 | Test | 80 | 80 | Pika held out as an unseen AI generator family |
 
-The manifest is `training/data/video_source/aigvdbench_manifest.csv`. It records the source URL, archive member, split, label, generator/source, CC-BY-4.0 license, byte size, and SHA-256 checksum. All 1,120 local videos were checked: no missing files, size mismatches, hash mismatches, or duplicate hashes were found.
+The manifest is `training/data/video_source/aigvdbench_manifest.csv`. It records the source URL, archive member, split, label, generator/source, CC-BY-4.0 license, byte size, and SHA-256 checksum. All 2,080 local videos were checked: no missing files, size mismatches, hash mismatches, duplicate hashes, or source groups shared across splits were found.
 
 The extracted 16-frame-per-video dataset and neural embedding cache also already exist:
 
 ```text
-training/data/video_frames                       17,920 JPEG frames
-training/data/video_frame_embeddings/train.npz  cached training embeddings
-training/data/video_frame_embeddings/validation.npz
-training/data/video_frame_embeddings/test.npz
+training/data/video_frames_v3                       33,280 JPEG frames
+training/data/video_frame_embeddings_v3/train.npz  cached training embeddings
+training/data/video_frame_embeddings_v3/validation.npz
+training/data/video_frame_embeddings_v3/test.npz
 ```
 
 Do not download the dataset or extract the frames again for the first run below. Do not move files between splits. The test split must remain untouched until the final evaluation.
 
-## Train A Safe Candidate Now
+## Reproduce Or Test A Safe Candidate
 
 This computer has CPU-only PyTorch, so the following workflow reuses the cached 2,048-dimensional ResNet embeddings. It trains a new regularized frame head and temporal model without overwriting the models currently used by the app.
 
@@ -43,20 +43,20 @@ cd "C:\Users\rishi\OneDrive\Desktop\Hackathon Project\truthshield-ai"
 
 ```powershell
 .\backend\venv\Scripts\python.exe .\training\train_video_frame_detector.py `
-  --data-dir .\training\data\video_frames `
+  --data-dir .\training\data\video_frames_v3 `
   --base-model .\training\models\truthshield-image-detector-v2 `
-  --output-dir .\training\models\truthshield-video-frame-detector-v2 `
-  --embedding-dir .\training\data\video_frame_embeddings `
+  --output-dir .\training\models\truthshield-video-frame-detector-v4 `
+  --embedding-dir .\training\data\video_frame_embeddings_v3 `
   --batch-size 32 `
   --seed 42
 ```
 
 Expected behavior:
 
-- It should load the three existing `.npz` embedding caches instead of running ResNet over all 17,920 frames again.
+- It should load the three existing `.npz` embedding caches instead of running ResNet over all 33,280 frames again.
 - It fits several regularized logistic heads using only `train`.
 - It selects regularization and the video decision threshold using `validation`.
-- It evaluates `test` once and writes `training/models/truthshield-video-frame-detector-v2/truthshield_video_frame_metrics.json`.
+- It evaluates `test` once and writes `training/models/truthshield-video-frame-detector-v4/truthshield_video_frame_metrics.json`.
 
 Do not add `--rebuild-embeddings` unless the frame images or base image model changed.
 
@@ -64,20 +64,20 @@ Do not add `--rebuild-embeddings` unless the frame images or base image model ch
 
 ```powershell
 .\backend\venv\Scripts\python.exe .\training\build_video_features_from_frame_cache.py `
-  --frame-dir .\training\data\video_frames `
-  --embedding-dir .\training\data\video_frame_embeddings `
-  --frame-model .\training\models\truthshield-video-frame-detector-v2 `
-  --output .\training\data\video_features_v2.jsonl
+  --frame-dir .\training\data\video_frames_v3 `
+  --embedding-dir .\training\data\video_frame_embeddings_v3 `
+  --frame-model .\training\models\truthshield-video-frame-detector-v4 `
+  --output .\training\data\video_features_v4.jsonl
 ```
 
-This creates one ordered feature record for each of the 1,120 source videos. It combines the candidate frame probabilities with luma, noise, edge, optical-flow, duplicate-frame, and scene-cut signals.
+This creates one ordered feature record for each of the 2,080 source videos. It combines the candidate frame probabilities with luma, noise, edge, optical-flow, duplicate-frame, and scene-cut signals.
 
 ### 3. Train a candidate temporal detector
 
 ```powershell
 .\backend\venv\Scripts\python.exe .\training\train_video_detector.py `
-  --features .\training\data\video_features_v2.jsonl `
-  --output .\training\models\truthshield-video-temporal-v2.joblib `
+  --features .\training\data\video_features_v4.jsonl `
+  --output .\training\models\truthshield-video-temporal-v4.joblib `
   --trees 600 `
   --max-depth 14 `
   --min-samples-leaf 2 `
@@ -85,7 +85,7 @@ This creates one ordered feature record for each of the 1,120 source videos. It 
   --exclude-features pixel_forensic_probability_mean,pixel_forensic_probability_p95,frame_truth_score_mean,frame_truth_score_std,frame_truth_score_p10
 ```
 
-The trainer compares regularized logistic regression, Random Forest, Extra Trees, and histogram gradient boosting on validation data. It writes the chosen model to `truthshield-video-temporal-v2.joblib` and the complete report to `truthshield-video-temporal-v2.metrics.json`.
+The trainer compares regularized logistic regression, Random Forest, Extra Trees, and histogram gradient boosting on validation data. It writes the chosen model to `truthshield-video-temporal-v4.joblib` and the complete report to `truthshield-video-temporal-v4.metrics.json`.
 
 ### 4. Compare the candidate with the current baseline
 
@@ -93,17 +93,17 @@ The current held-out 160-video test baseline is:
 
 | Metric | Current result |
 | --- | ---: |
-| Balanced accuracy | 78.75% |
-| ROC-AUC | 0.878906 |
-| AI recall | 88.75% (71/80) |
-| Real specificity | 68.75% (55/80) |
-| False AI warnings | 25/80 real videos |
-| Missed AI videos | 9/80 AI videos |
+| Balanced accuracy | 83.13% |
+| ROC-AUC | 0.906875 |
+| AI recall | 87.50% (70/80) |
+| Real specificity | 78.75% (63/80) |
+| False AI warnings | 17/80 real videos |
+| Missed AI videos | 10/80 AI videos |
 
 Read the candidate report:
 
 ```powershell
-$candidate = Get-Content .\training\models\truthshield-video-temporal-v2.metrics.json -Raw | ConvertFrom-Json
+$candidate = Get-Content .\training\models\truthshield-video-temporal-v4.metrics.json -Raw | ConvertFrom-Json
 $candidate.metrics.test | Format-List balanced_accuracy,roc_auc,precision,recall,specificity,f1,false_ai_alarm,missed_ai,brier_score,expected_calibration_error
 ```
 
@@ -128,8 +128,8 @@ After adding data, extract a new frame set and rebuild embeddings so the current
 
 ```powershell
 .\backend\venv\Scripts\python.exe .\training\prepare_video_frames.py `
-  --source-dir .\training\data\video_source_v2 `
-  --output-dir .\training\data\video_frames_v2 `
+  --source-dir .\training\data\video_source_v4 `
+  --output-dir .\training\data\video_frames_v4 `
   --frame-stride 1 `
   --max-frames-per-video 16 `
   --jpeg-quality 92 `
@@ -137,16 +137,16 @@ After adding data, extract a new frame set and rebuild embeddings so the current
   --clean-output
 
 .\backend\venv\Scripts\python.exe .\training\train_video_frame_detector.py `
-  --data-dir .\training\data\video_frames_v2 `
+  --data-dir .\training\data\video_frames_v4 `
   --base-model .\training\models\truthshield-image-detector-v2 `
-  --output-dir .\training\models\truthshield-video-frame-detector-v3 `
-  --embedding-dir .\training\data\video_frame_embeddings_v2 `
+  --output-dir .\training\models\truthshield-video-frame-detector-v4 `
+  --embedding-dir .\training\data\video_frame_embeddings_v4 `
   --batch-size 32 `
   --seed 42 `
   --rebuild-embeddings
 ```
 
-Then repeat the temporal feature and training steps with `v3` paths. Run the new challenge test only after model and threshold choices are frozen. If you inspect its failures and change the model, that challenge set becomes development data and you need a new final test.
+Then repeat the temporal feature and training steps with `v4` paths. Run the new challenge test only after model and threshold choices are frozen. If you inspect its failures and change the model, that challenge set becomes development data and you need a new final test.
 
 This guide assumes you are using Windows PowerShell and the project is here:
 
@@ -197,10 +197,10 @@ Do not download all of GenVidBench onto this laptop. Its Hugging Face page curre
 TruthShield includes a resumable AIGVDBench sampler. It reads only selected files from the official remote ZIP archives, instead of downloading archives as large as 94 GB. Run:
 
 ```powershell
-.\backend\venv\Scripts\python.exe .\training\prepare_aigvdbench_sample.py --train-per-source 80 --validation-per-source 40 --test-per-source 80
+.\backend\venv\Scripts\python.exe .\training\prepare_aigvdbench_sample.py --train-per-source 160 --validation-per-source 80 --test-per-source 80
 ```
 
-That creates 1,120 videos: 560 AI and 560 real. Open-Sora T2V, AnimateDiff T2V, SVD I2V, CogVideoX 1.5 V2V, and LTX V2V are used for training. HunyuanVideo T2V and EasyAnimate I2V are used for validation. The closed-source Pika family is held entirely out for the final cross-generator test. This covers text-to-video, image-to-video, and the harder video-to-video task without sharing generator families between splits. Real clips sharing the same original source ID are kept in one split to prevent leakage. The source URL, archive member, license, checksum, and split are recorded in `training/data/video_source/aigvdbench_manifest.csv`.
+That creates 2,080 videos: 1,040 AI and 1,040 real. Open-Sora T2V, AnimateDiff T2V, SVD I2V, CogVideoX 1.5 V2V, and LTX V2V are used for training. HunyuanVideo T2V and EasyAnimate I2V are used for validation. The closed-source Pika family is held entirely out for the final cross-generator test. This covers text-to-video, image-to-video, and the harder video-to-video task without sharing generator families between splits. Real clips sharing the same original source ID are kept in one split to prevent leakage. The source URL, archive member, license, checksum, and split are recorded in `training/data/video_source/aigvdbench_manifest.csv`.
 
 A practical first target is:
 
@@ -269,7 +269,7 @@ cd "C:\Users\rishi\OneDrive\Desktop\Hackathon Project\truthshield-ai"
 .\backend\venv\Scripts\python.exe .\training\prepare_video_frames.py --frame-stride 1 --max-frames-per-video 16 --clean-output
 ```
 
-The 16 frames are spread uniformly from the beginning through the end of each video. The benchmark's shortest generator clips are 16 frames, so this gives every video and class equal weight while still covering each full timeline. The 1,120-video sample produces 17,920 frames. A 10-second, 30-FPS video has about 300 frames, so extracting every training frame from hundreds of videos can otherwise create hundreds of thousands of near-duplicates.
+The 16 frames are spread uniformly from the beginning through the end of each video. The benchmark's shortest generator clips are 16 frames, so this gives every video and class equal weight while still covering each full timeline. The 2,080-video sample produces 33,280 frames. A 10-second, 30-FPS video has about 300 frames, so extracting every training frame from hundreds of videos can otherwise create hundreds of thousands of near-duplicates.
 
 For a first pipeline test, use every fifth frame instead:
 
@@ -331,7 +331,7 @@ After the CPU-friendly feature build finishes, run:
 
 It trains only on records marked `train`. It compares Random Forest, Extra Trees, gradient boosting, and regularized logistic models on `validation`, chooses a decision threshold there, and reports the final score once on the held-out `test` family. The report also includes ROC-AUC, average precision, calibration error, Brier score, and permutation feature importance.
 
-The current 1,120-video run selected logistic regression. On the untouched 160-video Pika/real test split it measured 78.75% balanced accuracy, 0.878906 ROC-AUC, 88.75% AI recall, and 68.75% real-video specificity. Those figures are useful evidence, not a guarantee; the test still contained 25 false AI alarms and 9 missed AI videos.
+The current 2,080-video run selected logistic regression. On the untouched 160-video Pika/real test split it measured 83.13% balanced accuracy, 0.906875 ROC-AUC, 87.50% AI recall, and 78.75% real-video specificity. Those figures are useful evidence, not a guarantee; the test still contained 17 false AI alarms and 10 missed AI videos.
 
 The output files are:
 

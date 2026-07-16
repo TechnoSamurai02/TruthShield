@@ -27,12 +27,12 @@ The conservative app result is safer than forcing every image into real or AI, b
 
 The packaged temporal model was tested on 80 AI and 80 real held-out videos.
 
-- Balanced accuracy: **78.75%**.
-- ROC-AUC: **0.8789**.
-- False AI warnings: **25 of 80 real videos** at the selected 0.25 threshold.
-- Missed AI videos: **9 of 80 AI videos**.
+- Balanced accuracy: **83.13%**.
+- ROC-AUC: **0.9069**.
+- False AI warnings: **17 of 80 real videos** at the selected 0.25 threshold.
+- Missed AI videos: **10 of 80 AI videos**.
 
-The video-frame model's held-out video-level balanced accuracy is **69.38%**, with 37 false AI warnings and 12 missed AI videos. Video is therefore the first model to improve.
+The packaged video-frame model's held-out video-level balanced accuracy is **79.38%**, with 16 false AI warnings and 17 missed AI videos. The temporal combination restores AI recall while preserving most of the frame model's improvement on real videos. Video still needs a broader locked challenge set and more hard-real data before its score should be treated as representative of the open world.
 
 ## Before training anything
 
@@ -51,7 +51,7 @@ Start with a larger Defactify export in a new folder so the current dataset rema
 
 ```powershell
 cd "C:\Users\rishi\OneDrive\Desktop\Hackathon Project\truthshield-ai"
-\.\backend\venv\Scripts\python.exe .\training\prepare_defactify_sample.py `
+.\backend\venv\Scripts\python.exe .\training\prepare_defactify_sample.py `
   --output-dir .\training\data\image_v3 `
   --max-per-label 8000 `
   --clean-output
@@ -60,7 +60,7 @@ cd "C:\Users\rishi\OneDrive\Desktop\Hackathon Project\truthshield-ai"
 Add real-but-edited examples:
 
 ```powershell
-\.\backend\venv\Scripts\python.exe .\training\make_captioned_real_variants.py `
+.\backend\venv\Scripts\python.exe .\training\make_captioned_real_variants.py `
   --dataset-dir .\training\data\image_v3 `
   --max-per-split 3000
 ```
@@ -79,7 +79,7 @@ Balance scene types in every split: people, hands, text, animals, food, building
 ### 2. Audit before training
 
 ```powershell
-\.\backend\venv\Scripts\python.exe .\training\audit_image_dataset.py `
+.\backend\venv\Scripts\python.exe .\training\audit_image_dataset.py `
   --data-dir .\training\data\image_v3 `
   --output .\training\data\image_v3_audit.json `
   --workers 1
@@ -94,7 +94,7 @@ Use a CUDA GPU if possible. A CPU run is valid but will be much slower.
 Smoke test:
 
 ```powershell
-\.\backend\venv\Scripts\python.exe .\training\train_image_detector.py `
+.\backend\venv\Scripts\python.exe .\training\train_image_detector.py `
   --data-dir .\training\data\image_v3 `
   --base-model .\training\models\truthshield-image-detector-v2 `
   --output-dir .\training\models\truthshield-image-detector-v3-smoke `
@@ -105,7 +105,7 @@ Smoke test:
 Full run:
 
 ```powershell
-\.\backend\venv\Scripts\python.exe .\training\train_image_detector.py `
+.\backend\venv\Scripts\python.exe .\training\train_image_detector.py `
   --data-dir .\training\data\image_v3 `
   --base-model .\training\models\truthshield-image-detector-v2 `
   --output-dir .\training\models\truthshield-image-detector-v3 `
@@ -116,7 +116,7 @@ Full run:
 ### 4. Evaluate honestly
 
 ```powershell
-\.\backend\venv\Scripts\python.exe .\training\evaluate_image_detector.py `
+.\backend\venv\Scripts\python.exe .\training\evaluate_image_detector.py `
   --model-dir .\training\models\truthshield-image-detector-v3 `
   --data-dir .\training\data\image_v3 `
   --split test `
@@ -158,9 +158,9 @@ Match duration, frame rate, resolution, codec, and compression distributions acr
 ### 2. Rebuild frames
 
 ```powershell
-\.\backend\venv\Scripts\python.exe .\training\prepare_video_frames.py `
+.\backend\venv\Scripts\python.exe .\training\prepare_video_frames.py `
   --source-dir .\training\data\video_source `
-  --output-dir .\training\data\video_frames_v2 `
+  --output-dir .\training\data\video_frames_v4 `
   --frame-stride 1 `
   --max-frames-per-video 16 `
   --clean-output
@@ -173,11 +173,11 @@ Sixteen uniformly spaced frames keep each source video equally weighted. Do not 
 CPU-friendly run:
 
 ```powershell
-\.\backend\venv\Scripts\python.exe .\training\train_video_frame_detector.py `
-  --data-dir .\training\data\video_frames_v2 `
+.\backend\venv\Scripts\python.exe .\training\train_video_frame_detector.py `
+  --data-dir .\training\data\video_frames_v4 `
   --base-model .\training\models\truthshield-image-detector-v3 `
-  --output-dir .\training\models\truthshield-video-frame-detector-v2 `
-  --embedding-dir .\training\data\video_frame_embeddings_v2 `
+  --output-dir .\training\models\truthshield-video-frame-detector-v4 `
+  --embedding-dir .\training\data\video_frame_embeddings_v4 `
   --batch-size 32
 ```
 
@@ -186,23 +186,23 @@ For the highest practical accuracy, compare that frozen-backbone result with a s
 ### 4. Rebuild and train the temporal model
 
 ```powershell
-\.\backend\venv\Scripts\python.exe .\training\build_video_features_from_frame_cache.py `
-  --frame-dir .\training\data\video_frames_v2 `
-  --embedding-dir .\training\data\video_frame_embeddings_v2 `
-  --frame-model .\training\models\truthshield-video-frame-detector-v2 `
-  --output .\training\data\video_features_v2.jsonl
+.\backend\venv\Scripts\python.exe .\training\build_video_features_from_frame_cache.py `
+  --frame-dir .\training\data\video_frames_v4 `
+  --embedding-dir .\training\data\video_frame_embeddings_v4 `
+  --frame-model .\training\models\truthshield-video-frame-detector-v4 `
+  --output .\training\data\video_features_v4.jsonl
 
-\.\backend\venv\Scripts\python.exe .\training\train_video_detector.py `
-  --features .\training\data\video_features_v2.jsonl `
-  --output .\training\models\truthshield-video-temporal-v2.joblib `
+.\backend\venv\Scripts\python.exe .\training\train_video_detector.py `
+  --features .\training\data\video_features_v4.jsonl `
+  --output .\training\models\truthshield-video-temporal-v4.joblib `
   --exclude-features pixel_forensic_probability_mean,pixel_forensic_probability_p95,frame_truth_score_mean,frame_truth_score_std,frame_truth_score_p10
 ```
 
-The temporal trainer writes `truthshield-video-temporal-v2.metrics.json` next to the model automatically.
+The temporal trainer writes `truthshield-video-temporal-v4.metrics.json` next to the model automatically.
 
 ### 5. Set a safer video decision policy
 
-The current temporal model's 0.25 threshold catches many AI videos but falsely warns on too many real videos. For the next model:
+The current temporal model's 0.25 threshold catches 70 of 80 held-out AI videos but still falsely warns on 17 of 80 held-out real videos. For the next model:
 
 1. Calibrate probabilities on validation only.
 2. Choose two thresholds: one for a strong AI warning and one for a strong lower-AI result.
