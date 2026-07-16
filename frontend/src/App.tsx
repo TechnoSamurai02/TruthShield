@@ -3,6 +3,7 @@ import AnalysisReport from "./components/AnalysisReport";
 import Header from "./components/Header";
 import MediaTabs from "./components/MediaTabs";
 import UploadPanel from "./components/UploadPanel";
+import WhatYouReceive from "./components/WhatYouReceive";
 import { analyzeImage, analyzeVideo } from "./lib/api";
 import type { AnalysisResult, MediaType } from "./lib/types";
 
@@ -125,6 +126,8 @@ function App() {
             />
           )}
         </section>
+
+        {!result ? <WhatYouReceive /> : null}
       </div>
     </main>
   );
