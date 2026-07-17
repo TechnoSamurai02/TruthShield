@@ -249,8 +249,8 @@ function CitationList({ citations }: { citations: Citation[] }) {
   if (citations.length === 0) return <p className="technical-empty">No citations were returned.</p>;
   return (
     <ol className="citation-list">
-      {citations.slice(0, 5).map((citation) => (
-        <li key={citation.url}>
+      {citations.slice(0, 5).map((citation, index) => (
+        <li key={`${citation.url}-${index}`}>
           <a href={citation.url} target="_blank" rel="noreferrer">
             <span>{citation.title}</span>
             <ExternalArrow />
@@ -290,7 +290,7 @@ function TechnicalEvidence({ result }: { result: AnalysisResult }) {
       <section className="technical-group">
         <h3>Analysis overview</h3>
         <dl className="metric-list">
-          <div><dt>Mode</dt><dd>{readableStatus(result.analysis_mode ?? "local heuristic")}</dd></div>
+          <div><dt>Analysis mode</dt><dd>{readableStatus(result.analysis_mode ?? "local heuristic")}</dd></div>
           <div><dt>Evidence coverage</dt><dd>{percent(result.confidence)}</dd></div>
           {primitiveDetails.map(([key, value]) => (
             <div key={key}><dt>{formatLabel(key)}</dt><dd>{String(value)}</dd></div>

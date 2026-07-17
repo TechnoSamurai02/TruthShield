@@ -5,6 +5,7 @@ interface UploadPanelProps {
   kind: MediaType;
   file: File | null;
   error: string | null;
+  errorTitle: string;
   loading: boolean;
   loadingMessage: string;
   onFileChange: (file: File | null) => void;
@@ -70,21 +71,35 @@ function useMediaPreview(file: File | null, kind: MediaType) {
     setMetadata(null);
     if (!file) return;
 
+    let disposed = false;
+    let image: HTMLImageElement | null = null;
+    let video: HTMLVideoElement | null = null;
     const objectUrl = URL.createObjectURL(file);
     setPreviewUrl(objectUrl);
 
     if (kind === "image") {
-      const image = new Image();
-      image.onload = () => setMetadata(`${image.naturalWidth} × ${image.naturalHeight}`);
+      image = new Image();
+      image.onload = () => {
+        if (!disposed && image) setMetadata(`${image.naturalWidth} × ${image.naturalHeight}`);
+      };
       image.src = objectUrl;
     } else {
-      const video = document.createElement("video");
+      video = document.createElement("video");
       video.preload = "metadata";
-      video.onloadedmetadata = () => setMetadata(formatDuration(video.duration));
+      video.onloadedmetadata = () => {
+        if (!disposed && video && Number.isFinite(video.duration)) {
+          setMetadata(formatDuration(video.duration));
+        }
+      };
       video.src = objectUrl;
     }
 
-    return () => URL.revokeObjectURL(objectUrl);
+    return () => {
+      disposed = true;
+      if (image) image.onload = null;
+      if (video) video.onloadedmetadata = null;
+      URL.revokeObjectURL(objectUrl);
+    };
   }, [file, kind]);
 
   return { previewUrl, metadata };
@@ -110,6 +125,7 @@ export default function UploadPanel({
   kind,
   file,
   error,
+  errorTitle,
   loading,
   loadingMessage,
   onFileChange,
@@ -257,7 +273,7 @@ export default function UploadPanel({
       {error ? (
         <div className="inline-error" role="alert">
           <div>
-            <strong>Analysis could not be completed.</strong>
+            <strong>{errorTitle}</strong>
             <p>{error}</p>
           </div>
           <button type="button" onClick={chooseFile}>

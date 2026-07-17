@@ -8,13 +8,29 @@ function themeFromDocument(): Theme {
   return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
 }
 
+function hasStoredTheme(): boolean {
+  try {
+    return Boolean(window.localStorage.getItem(THEME_STORAGE_KEY));
+  } catch {
+    return false;
+  }
+}
+
+function storeTheme(theme: Theme): void {
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch {
+    // The visible theme can still change when storage is unavailable.
+  }
+}
+
 export default function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>(themeFromDocument);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const followSystemTheme = (event: MediaQueryListEvent) => {
-      if (window.localStorage.getItem(THEME_STORAGE_KEY)) return;
+      if (hasStoredTheme()) return;
       const nextTheme: Theme = event.matches ? "dark" : "light";
       document.documentElement.dataset.theme = nextTheme;
       document.documentElement.style.colorScheme = nextTheme;
@@ -30,7 +46,7 @@ export default function ThemeToggle() {
     document.documentElement.dataset.themeTransition = "true";
     document.documentElement.dataset.theme = nextTheme;
     document.documentElement.style.colorScheme = nextTheme;
-    window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    storeTheme(nextTheme);
     setTheme(nextTheme);
 
     window.setTimeout(() => {

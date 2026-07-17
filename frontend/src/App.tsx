@@ -20,12 +20,17 @@ const EMPTY_FILES: Record<MediaType, File | null> = {
   video: null
 };
 
+interface ErrorState {
+  kind: "validation" | "analysis";
+  message: string;
+}
+
 function App() {
   const [activeMode, setActiveMode] = useState<MediaType>("image");
   const [files, setFiles] = useState<Record<MediaType, File | null>>(EMPTY_FILES);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [completedAt, setCompletedAt] = useState<Date | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorState | null>(null);
   const [loading, setLoading] = useState(false);
   const [messageIndex, setMessageIndex] = useState(0);
   const reportRef = useRef<HTMLElement | null>(null);
@@ -79,7 +84,10 @@ function App() {
       setResult(response);
     } catch (caught) {
       const fallback = "We could not analyze this file. Try another supported file or try again shortly.";
-      setError(caught instanceof Error && caught.message ? caught.message : fallback);
+      setError({
+        kind: "analysis",
+        message: caught instanceof Error && caught.message ? caught.message : fallback
+      });
     } finally {
       setLoading(false);
     }
@@ -117,11 +125,12 @@ function App() {
               key={activeMode}
               kind={activeMode}
               file={files[activeMode]}
-              error={error}
+              error={error?.message ?? null}
+              errorTitle={error?.kind === "validation" ? "This file cannot be used." : "Analysis could not be completed."}
               loading={loading}
               loadingMessage={SCAN_MESSAGES[messageIndex]}
               onFileChange={(file) => handleFileChange(activeMode, file)}
-              onValidationError={setError}
+              onValidationError={(message) => setError(message ? { kind: "validation", message } : null)}
               onAnalyze={runAnalysis}
             />
           )}
