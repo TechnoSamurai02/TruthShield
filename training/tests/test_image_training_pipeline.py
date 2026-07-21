@@ -13,11 +13,17 @@ from training.evaluate_image_detector import _likely_ai_threshold_metrics, _thre
 from training.prepare_defactify_sample import V4_GENERATOR_SPLITS, _group_split, _target_split
 from training.media_manifest import MediaRecord, read_manifest, sha256_file, validate_records, write_jsonl
 from training.prepare_manipulation_pairs import main as prepare_manipulation_pairs
+from training.prepare_diffusion_manipulation_pairs import (
+    SPLIT_MODEL_SPECS,
+    _random_inpainting_mask,
+)
+from training.evaluate_manipulation_localizer import _localized_support, _threshold_metrics
 from training.train_image_detector import (
     _augment_image,
     _binary_manipulation_dataset,
     _training_data_files,
 )
+from training.train_manipulation_localizer import _balanced_sample_weights, _image_score
 
 
 class ImageTrainingPipelineTests(unittest.TestCase):
@@ -202,6 +208,89 @@ class ImageTrainingPipelineTests(unittest.TestCase):
 
         self.assertEqual(cropped.size, (82, 82))
         self.assertEqual(preserved.size, (100, 100))
+
+    def test_diffusion_editor_families_are_isolated_by_split(self) -> None:
+        families = [spec["family"] for spec in SPLIT_MODEL_SPECS.values()]
+        model_ids = [spec["model_id"] for spec in SPLIT_MODEL_SPECS.values()]
+
+        self.assertEqual(len(families), 4)
+        self.assertEqual(len(set(families)), 4)
+        self.assertEqual(len(set(model_ids)), 4)
+        self.assertTrue(all(spec["license"] for spec in SPLIT_MODEL_SPECS.values()))
+        self.assertTrue(all(spec["license_url"].startswith("https://") for spec in SPLIT_MODEL_SPECS.values()))
+
+    def test_diffusion_masks_are_nontrivial_and_deterministic(self) -> None:
+        import random
+
+        first = _random_inpainting_mask((512, 512), random.Random(71))
+        second = _random_inpainting_mask((512, 512), random.Random(71))
+        coverage = np.count_nonzero(np.asarray(first)) / (512 * 512)
+
+        self.assertTrue(np.array_equal(np.asarray(first), np.asarray(second)))
+        self.assertGreaterEqual(coverage, 0.045)
+        self.assertLessEqual(coverage, 0.36)
+
+    def test_localizer_score_uses_a_region_not_one_hot_pixel(self) -> None:
+        probability = np.zeros((1, 100, 100), dtype=np.float32)
+        probability[:, :10, :10] = 0.8
+        probability[:, 50, 50] = 1.0
+
+        score = _image_score(probability, top_fraction=0.01)
+
+        self.assertGreater(score, 0.79)
+        self.assertLess(score, 0.81)
+
+    def test_localized_support_requires_a_meaningful_component(self) -> None:
+        isolated = np.zeros((100, 100), dtype=np.float32)
+        isolated[10, 10] = 0.99
+        region = np.zeros((100, 100), dtype=np.float32)
+        region[20:40, 30:60] = 0.9
+
+        isolated_support, _, isolated_ratio = _localized_support(isolated, threshold=0.5)
+        region_support, bounds, region_ratio = _localized_support(region, threshold=0.5)
+
+        self.assertFalse(isolated_support)
+        self.assertLess(isolated_ratio, 0.001)
+        self.assertTrue(region_support)
+        self.assertEqual(bounds, [30, 20, 60, 40])
+        self.assertAlmostEqual(region_ratio, 0.06)
+
+    def test_localizer_threshold_ignores_unstable_or_unlocalized_scores(self) -> None:
+        rows = [
+            {
+                "label": "ai_manipulated",
+                "manipulation_score": 0.95,
+                "localized_or_persistent_support": True,
+                "stable_across_views": True,
+            },
+            {
+                "label": "real_camera",
+                "manipulation_score": 0.99,
+                "localized_or_persistent_support": True,
+                "stable_across_views": False,
+            },
+            {
+                "label": "ai_generated",
+                "manipulation_score": 0.98,
+                "localized_or_persistent_support": False,
+                "stable_across_views": True,
+            },
+        ]
+
+        metrics = _threshold_metrics(rows, 0.90)
+
+        self.assertEqual(metrics["predicted_manipulated"], 1)
+        self.assertEqual(metrics["precision"], 1.0)
+        self.assertEqual(metrics["recall"], 1.0)
+        self.assertEqual(metrics["authentic_false_warning_rate"], 0.0)
+        self.assertEqual(metrics["generated_false_manipulation_rate"], 0.0)
+
+    def test_localizer_balanced_weights_equalize_class_mass(self) -> None:
+        labels = [0, 0, 0, 1]
+        weights = _balanced_sample_weights(labels)
+
+        self.assertAlmostEqual(sum(weight for label, weight in zip(labels, weights) if not label), 1.0)
+        self.assertAlmostEqual(sum(weight for label, weight in zip(labels, weights) if label), 1.0)
 
 
 if __name__ == "__main__":

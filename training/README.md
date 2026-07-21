@@ -170,3 +170,9 @@ Bad dataset equals bad model.
 If your training images are too clean, the model learns clean-vs-messy instead of real-vs-AI. Add messy real images on purpose.
 
 For the generator-isolated four-way pipeline, constrained calibration, promotion gates, and Lightning/Colab workflow, see [V4_ACCURACY_GUIDE.md](V4_ACCURACY_GUIDE.md).
+
+The mask-supervised manipulation path is implemented by:
+
+- `prepare_diffusion_manipulation_pairs.py`: resumable, split-isolated diffusion edits with exact masks and per-model license records.
+- `train_manipulation_localizer.py`: a lightweight LR-ASPP MobileNetV3 pixel localizer that trains only on `train` and selects checkpoints only on `tuning`.
+- `evaluate_manipulation_localizer.py`: full-image tuning/calibration scoring with localized connected-component support and controlled JPEG/resize stability checks. It refuses to read `locked_test` unless the final-gate flag is explicitly supplied.

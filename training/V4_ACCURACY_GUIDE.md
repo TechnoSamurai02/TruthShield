@@ -26,31 +26,40 @@ The registry is `training/models/model-registry.v4.json`.
 - Community Forensics is supported through the official-repository adapter. Review and clone its MIT repository, install its pinned dependencies, then set `COMMUNITY_FORENSICS_REPO_PATH` and `COMMUNITY_FORENSICS_MODEL_ID=OwensLab/commfor-model-224`. The adapter uses official preprocessing and weights; it does not execute arbitrary Hub code.
 - SPAI is intentionally optional until its pinned code/weights are packaged and CPU behavior is benchmarked. Do not silently replace it with a handcrafted FFT score.
 - Manipulation weights are disabled until redistribution terms are verified. A legacy edited/captioned class can screen for a low editing score, but cannot issue a positive AI-manipulation verdict.
-- When no redistributable specialist weights are available, build the locally derived paired fallback with `prepare_manipulation_pairs.py`. It trains on authentic, fully generated, and locally manipulated classes, preserves parent/source/license metadata, and uses editor families that are isolated across train, tuning, calibration, and locked test. It remains disabled for decisive outcomes until calibration and the locked gate pass.
+- The first locally derived whole-image/tile fallback is retained only as a rejected comparison experiment. Its full-image and tiled tuning results did not meet the low-false-warning gate.
+- The current fallback uses `prepare_diffusion_manipulation_pairs.py` plus `train_manipulation_localizer.py`. It generates real diffusion-inpainted edits with exact masks, keeps fully generated images as manipulation-negative examples, and isolates editor families across train, tuning, calibration, and locked test. It remains disabled for decisive outcomes until calibration and the locked gate pass.
 - The complete-video scan includes a non-decisive second-order motion screen. The product does not label it “D3” unless the official MIT implementation and an appropriately licensed checkpoint are actually installed and validated.
 
 These restrictions are accuracy features: a missing specialist produces `inconclusive`, not a fabricated substitute score.
 
-Build and train the paired fallback without exposing calibration or locked data to the trainer:
+Build and train the mask-supervised fallback without exposing calibration or locked data to the trainer. Run the two generation commands separately because each downloads and uses one GPU inpainting family. Both commands resume from completed parent records:
 
 ```bash
-python training/prepare_manipulation_pairs.py \
+python training/prepare_diffusion_manipulation_pairs.py \
   --source-dir training/data/defactify_v4 \
-  --output-dir training/data/manipulation_pairs_v4 \
-  --clean-output
-python training/media_manifest.py training/data/manipulation_pairs_v4/manifest.v4.jsonl \
-  --report training/evaluation/manipulation-pairs-v4-leakage.json
-python training/train_image_detector.py \
-  --detector-task manipulation \
-  --data-dir training/data/manipulation_pairs_v4 \
-  --output-dir training/models/truthshield-manipulation-binary-v4-candidate \
-  --base-model training/models/truthshield-image-detector-v4-candidate \
-  --epochs 8 \
-  --batch-size 32 \
+  --output-dir training/data/manipulation_diffusion_v4 \
+  --split train
+python training/prepare_diffusion_manipulation_pairs.py \
+  --source-dir training/data/defactify_v4 \
+  --output-dir training/data/manipulation_diffusion_v4 \
+  --split tuning
+python training/media_manifest.py training/data/manipulation_diffusion_v4/manifest.v4.jsonl \
+  --report training/evaluation/manipulation-diffusion-v4-leakage.json
+python training/train_manipulation_localizer.py \
+  --data-dir training/data/manipulation_diffusion_v4 \
+  --output-dir training/models/truthshield-manipulation-localizer-v4-candidate \
+  --epochs 12 \
+  --batch-size 8 \
+  --resolution 384 \
   --resume
+python training/evaluate_manipulation_localizer.py \
+  --data-dir training/data/manipulation_diffusion_v4 \
+  --model-dir training/models/truthshield-manipulation-localizer-v4-candidate \
+  --split tuning \
+  --output training/evaluation/manipulation-localizer-tuning-v4.csv
 ```
 
-The paired generator saves masks and bounding boxes in `localization.v4.jsonl`. Production uses the same configured specialist for a full-frame pass and a tiled localization pass. Do not set `AI_MANIPULATION_DETECTOR_MODELS` in a public deployment until the model license record, calibration artifact, and locked report are packaged.
+The generator uses Stable Diffusion 1.5 only for training, Stable Diffusion 2 only for tuning, Kandinsky 2.2 only for calibration, and SDXL only for the locked test. Model license URLs are written to `licenses.v4.json`; downloaded editor weights are not redistributed. The trainer exports a lightweight LR-ASPP MobileNetV3 TorchScript candidate. Do not configure it in a public deployment until its calibration artifact and locked report are packaged.
 
 ## 3. Calibrate only on the calibration split
 

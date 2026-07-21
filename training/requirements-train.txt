@@ -1,5 +1,6 @@
 accelerate>=0.33.0,<2.0
 datasets>=2.20.0,<6.0
+diffusers>=0.32.0,<0.37.0
 huggingface_hub>=0.24.0,<2.0
 joblib>=1.4.0,<2.0
 numpy==1.26.4
@@ -8,6 +9,7 @@ pillow>=10.0.0,<13.0
 requests>=2.32.0,<3.0
 scikit-learn==1.6.1
 scipy==1.14.1
+safetensors>=0.4.0,<1.0
 torch>=2.3.0
 torchvision>=0.18.0
 transformers>=4.43.0,<6.0
