@@ -226,6 +226,7 @@ class ImageTrainingPipelineTests(unittest.TestCase):
         self.assertEqual(len(families), 4)
         self.assertEqual(len(set(families)), 4)
         self.assertEqual(len(set(model_ids)), 4)
+        self.assertEqual(SPLIT_MODEL_SPECS["train"].get("variant"), "fp16")
         self.assertTrue(all(spec["license"] for spec in SPLIT_MODEL_SPECS.values()))
         self.assertTrue(all(spec["license_url"].startswith("https://") for spec in SPLIT_MODEL_SPECS.values()))
 

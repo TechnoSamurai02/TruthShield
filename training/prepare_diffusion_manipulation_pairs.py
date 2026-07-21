@@ -31,6 +31,7 @@ SPLIT_MODEL_SPECS: dict[str, dict[str, str]] = {
     "train": {
         "model_id": "stable-diffusion-v1-5/stable-diffusion-inpainting",
         "family": "stable-diffusion-v1.5-inpainting",
+        "variant": "fp16",
         "license": "CreativeML OpenRAIL-M",
         "license_url": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-inpainting",
     },
@@ -213,6 +214,8 @@ def _load_pipeline(spec: dict[str, str], cache_dir: Path | None) -> tuple[Any, A
         "torch_dtype": torch.float16,
         "use_safetensors": True,
     }
+    if spec.get("variant"):
+        kwargs["variant"] = spec["variant"]
     if cache_dir:
         kwargs["cache_dir"] = str(cache_dir.resolve())
     print(f"Loading {spec['model_id']} on {torch.cuda.get_device_name(0)}", flush=True)
