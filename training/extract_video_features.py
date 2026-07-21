@@ -15,13 +15,15 @@ VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm", ".avi", ".mkv", ".m4v"}
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Analyze every frame and save one temporal-feature record per labeled video."
+        description="Run the exact adaptive production sampling policy and save one feature record per video."
     )
     parser.add_argument("--source-dir", default="training/data/video_source")
     parser.add_argument("--output", default="training/data/video_features.jsonl")
     parser.add_argument("--frame-model", default="")
     parser.add_argument("--frame-stride", type=int, default=1)
     parser.add_argument("--max-frames", type=int, default=0)
+    parser.add_argument("--keyframe-max", type=int, default=64)
+    parser.add_argument("--window-max", type=int, default=8)
     parser.add_argument(
         "--tile-analysis",
         action=argparse.BooleanOptionalAction,
@@ -43,9 +45,11 @@ def main() -> None:
     os.environ["ENABLE_LOCAL_AI_MODELS"] = "true"
     os.environ["BRAVE_SEARCH_API_KEY"] = ""
     os.environ["GOOGLE_VISION_API_KEY"] = ""
-    os.environ["VIDEO_ANALYSIS_MODE"] = "exhaustive"
+    os.environ["VIDEO_ANALYSIS_MODE"] = "adaptive"
     os.environ["VIDEO_FRAME_STRIDE"] = str(max(1, args.frame_stride))
     os.environ["VIDEO_MAX_FRAMES"] = str(max(0, args.max_frames))
+    os.environ["VIDEO_KEYFRAME_MAX"] = str(max(8, args.keyframe_max))
+    os.environ["VIDEO_WINDOW_MAX"] = str(max(1, args.window_max))
     os.environ["VIDEO_TILE_ANALYSIS"] = "true" if args.tile_analysis else "false"
     os.environ["AI_VIDEO_TEMPORAL_MODEL_PATH"] = ""
     if args.frame_model:
@@ -61,6 +65,9 @@ def main() -> None:
         "frame_stride": max(1, args.frame_stride),
         "max_frames": max(0, args.max_frames),
         "tile_analysis": bool(args.tile_analysis),
+        "sampling_policy": "adaptive_v4",
+        "keyframe_max": max(8, args.keyframe_max),
+        "window_max": max(1, args.window_max),
     }
     completed = _completed_source_ids(output_path, analysis_config) if args.resume else set()
     videos = _collect_videos(source_dir)
@@ -87,7 +94,7 @@ def main() -> None:
                     "source_video": str(relative),
                     "split": split,
                     "label": label,
-                    "features": technical.get("video_model_features") or {},
+                    "features": technical.get("production_policy_features") or {},
                     "frames_analyzed": result.get("frames_analyzed", 0),
                     "analysis_coverage": technical.get("analysis_coverage") or {},
                     "truth_score": result.get("truth_score"),

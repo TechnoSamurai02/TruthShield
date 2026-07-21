@@ -1,0 +1,34 @@
+{
+  "policy_version": "truthshield-media-policy-v4.0.0",
+  "calibration_id": "bootstrap-conservative-v4",
+  "calibration_status": "bootstrap_pending_locked_v4_calibration",
+  "source_population": "Legacy TruthShield models with conservative abstention; replace after generator-isolated v4 calibration",
+  "generation": {
+    "lower_threshold": 0.15,
+    "upper_threshold": 0.95,
+    "max_authentic_false_warning_rate": 0.01
+  },
+  "manipulation": {
+    "lower_threshold": 0.15,
+    "upper_threshold": 0.95,
+    "max_authentic_false_warning_rate": 0.01,
+    "require_localized_or_persistent_support": true
+  },
+  "stability": {
+    "max_view_score_range": 0.18,
+    "max_window_score_range": 0.30
+  },
+  "quality": {
+    "minimum_short_side": 224,
+    "minimum_video_frames": 8
+  },
+  "requirements": {
+    "generation_for_decisive_verdict": true,
+    "manipulation_for_authentic_verdict": true
+  },
+  "notes": [
+    "Model scores are classifier outputs, not real-world probabilities.",
+    "These bootstrap thresholds preserve the pre-v4 conservative limits until a generator-isolated calibration run replaces them.",
+    "If a false-warning constraint cannot be satisfied, the calibrator disables that decisive outcome."
+  ]
+}

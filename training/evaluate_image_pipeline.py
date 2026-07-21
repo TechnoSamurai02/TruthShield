@@ -101,9 +101,9 @@ def main() -> None:
 
     ai_count = sum(per_class["ai_generated"].values())
     non_ai_count = len(samples) - ai_count
-    true_ai = per_class["ai_generated"]["likely_ai_generated_or_manipulated"]
+    true_ai = per_class["ai_generated"]["likely_ai_generated"]
     false_ai = sum(
-        per_class[label]["likely_ai_generated_or_manipulated"]
+        per_class[label]["likely_ai_generated"] + per_class[label]["likely_ai_manipulated"]
         for label in ("real_camera", "real_edited_or_captioned")
     )
     ai_as_authentic = per_class["ai_generated"]["likely_authentic"]
@@ -153,7 +153,7 @@ def main() -> None:
 def _is_error(expected: str, verdict: str) -> bool:
     if expected == "ai_generated":
         return verdict == "likely_authentic"
-    return verdict == "likely_ai_generated_or_manipulated"
+    return verdict in {"likely_ai_generated", "likely_ai_manipulated"}
 
 
 if __name__ == "__main__":

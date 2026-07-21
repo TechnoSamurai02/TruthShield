@@ -100,9 +100,10 @@ Open the deployed frontend and run:
 
 - Image and video analysis with representative test files
 - Image upload with a small `.jpg` or `.png`
-- A known AI regression image; inspect the three-way verdict and the raw detector score separately
+- A known AI regression image; inspect the four-way assessment and the generation/manipulation scores separately
 - A known real street/building photograph; a raw score inside the 0.15–0.95 abstention band must render as `Inconclusive`, not `Likely AI`
 - Health check directly at `/api/health`
+- Confirm `/api/health` reports the expected policy/calibration ID, artifact checksums, and decisive capabilities
 
 If the frontend loads but requests fail, first check:
 

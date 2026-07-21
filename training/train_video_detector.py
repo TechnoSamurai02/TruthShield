@@ -100,6 +100,9 @@ def main() -> None:
         "feature_importance": importance,
         "model_selection": leaderboard,
         "excluded_features": sorted(excluded_features),
+        "sampling_policy": _sampling_policy(records),
+        "model_version": "truthshield-video-temporal-v4-candidate",
+        "calibration_id": "requires-separate-v4-calibration",
     }
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -114,6 +117,7 @@ def main() -> None:
                 "feature_importance": importance,
                 "model_selection": leaderboard,
                 "excluded_features": sorted(excluded_features),
+                "sampling_policy": _sampling_policy(records),
             },
             indent=2,
         ),
@@ -146,6 +150,14 @@ def _feature_names(records: List[Dict[str, Any]]) -> List[str]:
     if not names:
         raise SystemExit("No feature values were found in the JSONL records.")
     return names
+
+
+def _sampling_policy(records: List[Dict[str, Any]]) -> str:
+    policies = {
+        str((record.get("analysis_config") or {}).get("sampling_policy") or "unspecified")
+        for record in records
+    }
+    return next(iter(policies)) if len(policies) == 1 else "mixed_or_unspecified"
 
 
 def _split_arrays(

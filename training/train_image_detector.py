@@ -7,7 +7,7 @@ import json
 import os
 import random
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter
@@ -30,6 +30,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-train-samples", type=int, default=0)
     parser.add_argument("--max-eval-samples", type=int, default=0)
     parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--save-steps",
+        type=int,
+        default=250,
+        help="Checkpoint/evaluation interval. Frequent checkpoints make free-GPU sessions resumable.",
+    )
     parser.add_argument(
         "--cache-dir",
         default="",
@@ -63,7 +69,8 @@ def main() -> None:
         raise SystemExit(f"Dataset folder not found: {data_dir}")
 
     dataset_kwargs = {"cache_dir": str(cache_dir / "datasets")} if cache_dir is not None else {}
-    dataset = load_dataset("imagefolder", data_dir=str(data_dir), **dataset_kwargs)
+    data_files = _training_data_files(data_dir)
+    dataset = load_dataset("imagefolder", data_files=data_files, **dataset_kwargs)
     if "validation" not in dataset:
         split = dataset["train"].train_test_split(test_size=0.15, seed=42)
         dataset["train"] = split["train"]
@@ -167,7 +174,9 @@ def _build_training_args(TrainingArguments: Any, args: argparse.Namespace) -> An
         "weight_decay": args.weight_decay,
         "warmup_ratio": args.warmup_ratio,
         "num_train_epochs": args.epochs,
-        "save_strategy": "epoch",
+        "save_strategy": "steps",
+        "save_steps": max(1, args.save_steps),
+        "eval_steps": max(1, args.save_steps),
         "logging_steps": 20,
         "remove_unused_columns": False,
         "load_best_model_at_end": True,
@@ -184,9 +193,9 @@ def _build_training_args(TrainingArguments: Any, args: argparse.Namespace) -> An
     if "data_seed" in parameters:
         kwargs["data_seed"] = args.seed
     if "eval_strategy" in parameters:
-        kwargs["eval_strategy"] = "epoch"
+        kwargs["eval_strategy"] = "steps"
     elif "evaluation_strategy" in parameters:
-        kwargs["evaluation_strategy"] = "epoch"
+        kwargs["evaluation_strategy"] = "steps"
     else:
         print("Warning: this Transformers version does not expose an evaluation strategy argument.")
     return TrainingArguments(**kwargs)
@@ -203,6 +212,31 @@ def _latest_checkpoint(output_dir: Path) -> Path | None:
             if (path / "trainer_state.json").is_file():
                 checkpoints.append((step, path))
     return max(checkpoints, default=(0, None), key=lambda item: item[0])[1]
+
+
+def _training_data_files(data_dir: Path) -> Dict[str, List[str]]:
+    """Load only train/tuning for v4; never expose calibration or locked_test to Trainer."""
+    extensions = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+
+    def files(folder: Path) -> List[str]:
+        return [str(path) for path in sorted(folder.rglob("*")) if path.is_file() and path.suffix.lower() in extensions]
+
+    train_files = files(data_dir / "train")
+    validation_dir = data_dir / "tuning" if (data_dir / "tuning").is_dir() else data_dir / "validation"
+    validation_files = files(validation_dir)
+    result: Dict[str, List[str]] = {}
+    if train_files:
+        result["train"] = train_files
+    if validation_files:
+        result["validation"] = validation_files
+    # Legacy datasets may have a normal test split. V4 uses locked_test, which
+    # is deliberately not loaded here and is evaluated only by the gate script.
+    test_files = files(data_dir / "test")
+    if test_files and not (data_dir / "locked_test").exists():
+        result["test"] = test_files
+    if not result.get("train"):
+        raise SystemExit(f"No training images were found below {data_dir / 'train'}")
+    return result
 
 
 def _reuse_matching_classifier_rows(

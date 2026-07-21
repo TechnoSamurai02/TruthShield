@@ -59,6 +59,7 @@ const EVIDENCE_LABELS: Record<string, string> = {
   ai_generation_score: "Dedicated detector AI-class score (not probability)",
   sampled_frame_ai_generation_score: "Sampled-frame AI likelihood",
   video_ai_generation_score: "Video AI-generated likelihood",
+  video_manipulation_score: "Video manipulation-class score",
   metadata_score: "Metadata availability (not authenticity)",
   visual_consistency_score: "Basic image quality (not authenticity)",
   compression_score: "Compression consistency (not authenticity)",
@@ -126,6 +127,9 @@ function sourceMatchFrom(result: AnalysisResult): SourceMatch | null {
 }
 
 function detectorSummary(detector: DetectorResult): string {
+  if (typeof detector.manipulation_probability === "number") {
+    return `${percent(detector.manipulation_probability)} manipulation-class score`;
+  }
   if (typeof detector.synthetic_probability === "number") {
     return `${percent(detector.synthetic_probability)} AI-class score`;
   }
@@ -189,7 +193,7 @@ function generationVerdict(likelihood: number | null, learnedAvailable: boolean)
 
 function generationRiskClass(result: AnalysisResult, likelihood: number | null, learnedAvailable: boolean): string {
   if (result.assessment?.verdict === "likely_authentic") return "risk-trust";
-  if (result.assessment?.verdict === "likely_ai_generated_or_manipulated") return "risk-high";
+  if (result.assessment?.verdict === "likely_ai_generated" || result.assessment?.verdict === "likely_ai_manipulated") return "risk-high";
   if (result.assessment?.verdict === "inconclusive") return "risk-medium";
   if (!learnedAvailable || likelihood === null) return "risk-low";
   if (likelihood >= 70) return "risk-high";
@@ -203,17 +207,19 @@ function plainConfidence(value?: string): string {
   return "Low";
 }
 
-function feedbackReasons(result: AnalysisResult, side: "ai" | "not-ai"): string[] {
-  const customReasons = side === "ai"
-    ? result.custom_feedback?.reasons_it_might_be_ai
-    : result.custom_feedback?.reasons_it_might_not_be_ai;
+function feedbackReasons(result: AnalysisResult, side: "generated" | "manipulated" | "authentic"): string[] {
+  const customReasons = side === "generated"
+    ? result.custom_feedback?.reasons_it_might_be_generated ?? result.custom_feedback?.reasons_it_might_be_ai
+    : side === "manipulated"
+      ? result.custom_feedback?.reasons_it_might_be_manipulated
+      : result.custom_feedback?.reasons_it_might_not_be_ai;
   if (customReasons) return customReasons;
   if (result.assessment) {
-    return side === "ai"
-      ? result.assessment.evidence_raising_concern
-      : result.assessment.evidence_supporting_authenticity;
+    if (side === "generated") return result.assessment.evidence_supporting_generation;
+    if (side === "manipulated") return result.assessment.evidence_supporting_manipulation;
+    return result.assessment.evidence_supporting_authenticity;
   }
-  return side === "ai" ? result.warnings : result.positive_signals;
+  return side === "authentic" ? result.positive_signals : side === "generated" ? result.warnings : [];
 }
 
 function ReportSection({ index, title, tone, children }: { index: string; title: string; tone?: string; children: ReactNode }) {
@@ -364,6 +370,7 @@ function TechnicalEvidence({ result }: { result: AnalysisResult }) {
                   <div><span>Time</span><strong>{typeof frame.timestamp_seconds === "number" ? `${frame.timestamp_seconds.toFixed(2)}s` : "—"}</strong></div>
                   <div><span>Truth Score</span><strong>{frame.truth_score}/100</strong></div>
                   <div><span>Synthetic signal</span><strong>{percent(frame.synthetic_probability)}</strong></div>
+                  <div><span>Manipulation signal</span><strong>{percent(frame.manipulation_probability)}</strong></div>
                   <p>{frame.warnings.join(" · ")}</p>
                 </div>
               ))}
@@ -442,8 +449,9 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
     ?? result.custom_feedback?.explanation
     ?? assessment?.reason
     ?? result.summary;
-  const reasonsItMightBeAi = feedbackReasons(result, "ai");
-  const reasonsItMightNotBeAi = feedbackReasons(result, "not-ai");
+  const generationReasons = feedbackReasons(result, "generated");
+  const manipulationReasons = feedbackReasons(result, "manipulated");
+  const authenticityReasons = feedbackReasons(result, "authentic");
   const uncertaintyNote = result.custom_feedback?.uncertainty_note
     ?? "This result is an estimate, not proof. Editing, compression, screenshots, and unfamiliar AI tools can change the clues the system uses.";
   const nextSteps = result.custom_feedback?.next_steps?.length
@@ -456,7 +464,14 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
       ? "Model estimate only · not a percent chance or proof"
       : generationResult.detail;
   const technicalPreview = [
+    typeof assessment?.generation_score === "number"
+      ? `${Math.round(assessment.generation_score * 100)}% generation-class score`
+      : null,
+    typeof assessment?.manipulation_score === "number"
+      ? `${Math.round(assessment.manipulation_score * 100)}% manipulation-class score`
+      : null,
     generationLikelihood !== null
+      && typeof assessment?.generation_score !== "number"
       ? `${Math.round(generationLikelihood)}% ${showModelScore ? "raw AI-class score" : "fallback signal"}`
       : null,
     learnedAvailable ? "learned detector active" : "fallback only",
@@ -497,6 +512,12 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
         <div className="verdict-block">
           <h1 id="report-heading">{headline}</h1>
           <p className="verdict">{verdictDetail}</p>
+          {assessment ? (
+            <p className="report-summary">
+              Generation score: {percent(assessment.generation_score)} · Manipulation score: {percent(assessment.manipulation_score)}
+              {` · Policy ${assessment.decision_policy_version}`}
+            </p>
+          ) : null}
           <p className="report-summary">Review both sides below before making an important decision.</p>
         </div>
       </div>
@@ -508,26 +529,33 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
         </p>
       </ReportSection>
 
-      <ReportSection index="02" title="Why it might be AI" tone="warning-section">
+      <ReportSection index="02" title="Evidence of AI generation" tone="warning-section">
         <FindingList
-          items={reasonsItMightBeAi}
-          emptyMessage="We did not find a strong, reliable reason on this side. That does not prove the content is real."
+          items={generationReasons}
+          emptyMessage="No strong calibrated generation evidence was available. That alone does not establish authenticity."
         />
       </ReportSection>
 
-      <ReportSection index="03" title="Why it might not be AI" tone="positive-section">
+      <ReportSection index="03" title="Evidence of AI editing or manipulation" tone="warning-section">
         <FindingList
-          items={reasonsItMightNotBeAi}
-          emptyMessage="We did not find a strong, reliable reason on this side. That does not prove the content is AI-generated."
+          items={manipulationReasons}
+          emptyMessage="No dedicated manipulation evidence was found, or the specialist was unavailable."
         />
       </ReportSection>
 
-      <ReportSection index="04" title="What could make this result wrong">
+      <ReportSection index="04" title="Evidence supporting authenticity" tone="positive-section">
+        <FindingList
+          items={authenticityReasons}
+          emptyMessage="No strong, reliable authenticity support was available. This does not mean the content is AI-generated."
+        />
+      </ReportSection>
+
+      <ReportSection index="05" title="What could make this result wrong">
         <p className="uncertainty-note">{uncertaintyNote}</p>
       </ReportSection>
 
-      <ReportSection index="05" title="What to do next">
-        {nextSteps.length ? (
+      <ReportSection index="06" title="What to do next">
+        {nextSteps.length > 0 ? (
           <div className="recommendation-copy">
             <ol>{nextSteps.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ol>
           </div>
@@ -538,8 +566,8 @@ const AnalysisReport = forwardRef<HTMLElement, AnalysisReportProps>(function Ana
 
       <details className="technical-evidence">
         <summary>
-          <span className="technical-summary-heading"><span className="section-number" aria-hidden="true">06</span><span>Technical evidence</span></span>
-          <span className="technical-preview">{technicalPreview.length ? technicalPreview.join(" · ") : "Forensics · provenance · research"}</span>
+          <span className="technical-summary-heading"><span className="section-number" aria-hidden="true">07</span><span>Technical evidence</span></span>
+          <span className="technical-preview">{technicalPreview.length > 0 ? technicalPreview.join(" · ") : "Forensics · provenance · research"}</span>
           <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m5 8 5 5 5-5" /></svg>
         </summary>
         <TechnicalEvidence result={result} />

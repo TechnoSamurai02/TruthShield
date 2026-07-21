@@ -168,3 +168,5 @@ A useful model should not call every meme or screenshot AI.
 Bad dataset equals bad model.
 
 If your training images are too clean, the model learns clean-vs-messy instead of real-vs-AI. Add messy real images on purpose.
+
+For the generator-isolated four-way pipeline, constrained calibration, promotion gates, and Lightning/Colab workflow, see [V4_ACCURACY_GUIDE.md](V4_ACCURACY_GUIDE.md).

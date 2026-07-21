@@ -7,6 +7,10 @@ runs/
 *.pth
 *.safetensors
 
+# V4 policy metadata is deployable configuration, not a heavyweight model.
+!models/media-policy-v4.json
+!models/model-registry.v4.json
+
 # Version the final deployable models and their evaluation artifacts. Keep
 # checkpoints, smoke models, datasets, and embedding caches local/reproducible.
 !models/truthshield-image-detector-v2/

@@ -23,7 +23,11 @@ from analyzers.scoring import (
     summarize_result,
     unique_messages,
 )
-from analyzers.video_forensics import VideoForensicsAccumulator, run_trained_video_detector
+from analyzers.video_forensics import (
+    VideoForensicsAccumulator,
+    run_trained_video_detector,
+    trained_video_sampling_policy,
+)
 
 
 SAMPLED_FRAME_COUNT = 8
@@ -44,11 +48,24 @@ def analyze_video_path(path: str, filename: str = "upload") -> Dict[str, Any]:
         width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
         height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
         duration_seconds = reported_frame_count / fps if reported_frame_count > 0 and fps > 0 else 0.0
-        sampled_positions = (
-            set(_sampled_frame_positions(reported_frame_count))
-            if settings.video_analysis_mode == "sampled"
-            else None
-        )
+        adaptive_scan: Dict[str, Any] = {}
+        if settings.video_analysis_mode == "adaptive":
+            adaptive_limit = min(
+                settings.video_keyframe_max,
+                settings.video_max_frames if settings.video_max_frames > 0 else settings.video_keyframe_max,
+            )
+            adaptive_scan = _scan_video_for_candidates(
+                path,
+                reported_frame_count,
+                fps,
+                max_frames=adaptive_limit,
+                max_windows=settings.video_window_max,
+            )
+            sampled_positions = set(adaptive_scan.get("selected_positions") or [])
+        elif settings.video_analysis_mode == "sampled":
+            sampled_positions = set(_sampled_frame_positions(reported_frame_count))
+        else:
+            sampled_positions = None
         temporal_model_positions = set(
             _uniform_frame_positions(reported_frame_count, TEMPORAL_MODEL_FRAME_COUNT)
         )
@@ -124,6 +141,14 @@ def analyze_video_path(path: str, filename: str = "upload") -> Dict[str, Any]:
                     },
                 )
             synthetic_probability = temporal_frame.get("synthetic_probability")
+            manipulation_probability = max(
+                [
+                    float(detector["manipulation_probability"])
+                    for detector in frame_result.get("detectors", [])
+                    if isinstance(detector.get("manipulation_probability"), (int, float))
+                ],
+                default=None,
+            )
             truth_score = float(frame_result["truth_score"])
             frame_score_series.append((source_frame_index + 1, truth_score))
             warning_counts.update(frame_result.get("warnings", []))
@@ -140,13 +165,21 @@ def analyze_video_path(path: str, filename: str = "upload") -> Dict[str, Any]:
                             "status": detector.get("status"),
                             "label": detector.get("label"),
                             "synthetic_probability": detector.get("synthetic_probability"),
+                            "manipulation_probability": detector.get("manipulation_probability"),
+                            "task": detector.get("task"),
+                            "model_version": detector.get("model_version"),
+                            "calibration_id": detector.get("calibration_id"),
+                            "suspicious_regions": detector.get("suspicious_regions", []),
                         }
                         for detector in frame_result.get("detectors", [])
                     ],
+                    "source_frame_index": source_frame_index,
                 }
             )
             if truth_score < 50 or (
                 isinstance(synthetic_probability, (int, float)) and synthetic_probability >= 0.65
+            ) or (
+                isinstance(manipulation_probability, (int, float)) and manipulation_probability >= 0.65
             ):
                 suspicious_candidates.append(
                     {
@@ -160,7 +193,18 @@ def analyze_video_path(path: str, filename: str = "upload") -> Dict[str, Any]:
                             else None
                         ),
                         "tile_synthetic_probability": temporal_frame.get("tile_synthetic_probability"),
+                        "manipulation_probability": (
+                            round(float(manipulation_probability), 4)
+                            if isinstance(manipulation_probability, (int, float))
+                            else None
+                        ),
                         "warnings": frame_result.get("warnings", [])[:3],
+                        "kind": (
+                            "manipulation"
+                            if isinstance(manipulation_probability, (int, float))
+                            and float(manipulation_probability) > float(synthetic_probability or 0.0)
+                            else "generation"
+                        ),
                     }
                 )
             analyzed_frames += 1
@@ -170,15 +214,37 @@ def analyze_video_path(path: str, filename: str = "upload") -> Dict[str, Any]:
 
         temporal_summary = accumulator.summary()
         temporal_model_summary = temporal_model_accumulator.summary()
+        production_policy_features = dict(temporal_summary["features"])
+        if adaptive_scan:
+            production_policy_features.update(
+                {
+                    "second_order_motion_mean": float(adaptive_scan.get("second_order_motion_mean") or 0.0),
+                    "second_order_motion_p95": float(adaptive_scan.get("second_order_motion_p95") or 0.0),
+                }
+            )
         video_detectors = accumulator.detector_results(None)
+        if adaptive_scan:
+            video_detectors.append(_second_order_temporal_detector(adaptive_scan))
         if settings.ai_video_temporal_model_path:
+            trained_sampling_policy = trained_video_sampling_policy(settings.ai_video_temporal_model_path)
             video_detectors.append(
                 run_trained_video_detector(
-                    temporal_model_summary["features"],
+                    (
+                        production_policy_features
+                        if trained_sampling_policy == "adaptive_v4"
+                        else temporal_model_summary["features"]
+                    ),
                     settings.ai_video_temporal_model_path,
                 )
             )
+        else:
+            trained_sampling_policy = "none"
         features = temporal_model_summary["features"]
+        temporal_windows = _window_scores(
+            adaptive_scan.get("temporal_windows", []) if adaptive_scan else [],
+            compact_frame_results,
+            fps,
+        )
         frame_scores = [score for _, score in frame_score_series]
         average_frame_score = float(np.mean(frame_scores))
         suspicious_candidates.sort(
@@ -287,6 +353,12 @@ def analyze_video_path(path: str, filename: str = "upload") -> Dict[str, Any]:
                         accumulator.tiled_pixels_examined,
                     ),
                     "model_input_note": "Native-resolution forensic checks process full frames. Neural classifiers resize full frames and overlapping tiles to their learned input size.",
+                    "selection_policy": (
+                        "uniform coverage plus scene boundaries, anomaly peaks, and neighboring frames"
+                        if settings.video_analysis_mode == "adaptive"
+                        else settings.video_analysis_mode
+                    ),
+                    "complete_video_cheap_scan": bool(adaptive_scan),
                 },
                 "frame_score_summary": {
                     "mean": round(float(np.mean(frame_scores)), 3),
@@ -297,11 +369,15 @@ def analyze_video_path(path: str, filename: str = "upload") -> Dict[str, Any]:
                 },
                 "frame_scores_preview": _downsample_score_series(frame_score_series, MAX_FRAME_SCORE_PREVIEW),
                 "temporal_forensics": temporal_summary,
+                "adaptive_scan": adaptive_scan,
+                "temporal_windows": temporal_windows,
                 "video_model_features": features,
+                "production_policy_features": production_policy_features,
                 "trained_video_model_frame_count": temporal_model_summary["frames_seen"],
                 "trained_video_model_sampling": (
-                    "Up to 16 uniformly spaced full-frame signals; exhaustive native and tiled "
-                    "analysis remains in temporal_forensics and analysis_coverage."
+                    "Adaptive v4 selected-frame distribution."
+                    if trained_sampling_policy == "adaptive_v4"
+                    else "Legacy model: up to 16 uniformly spaced full-frame signals."
                 ),
                 "heuristic_note": "Every-frame and pixel-level checks provide evidence, not proof. Natural motion, edits, animation, compression, and screen recordings can resemble AI artifacts.",
             },
@@ -339,6 +415,209 @@ def _uniform_frame_positions(frame_count: int, limit: int) -> List[int]:
         return list(range(max(1, limit)))
     count = min(max(1, limit), frame_count)
     return sorted({int(round(position)) for position in np.linspace(0, frame_count - 1, count)})
+
+
+def _scan_video_for_candidates(
+    path: str,
+    reported_frame_count: int,
+    fps: float,
+    *,
+    max_frames: int,
+    max_windows: int,
+) -> Dict[str, Any]:
+    """Decode the complete video with cheap features before neural inference."""
+    capture = cv2.VideoCapture(path)
+    if not capture.isOpened():
+        return {
+            "status": "unavailable",
+            "selected_positions": _uniform_frame_positions(reported_frame_count, max_frames),
+            "temporal_windows": [],
+        }
+    anomaly_scores: List[tuple[int, float]] = []
+    scene_boundaries: List[int] = []
+    motion_values: List[float] = []
+    previous_gray: np.ndarray | None = None
+    previous_histogram: np.ndarray | None = None
+    decoded = 0
+    try:
+        while True:
+            success, frame = capture.read()
+            if not success or frame is None:
+                break
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            if gray.shape[1] > 192:
+                scale = 192.0 / gray.shape[1]
+                gray = cv2.resize(
+                    gray,
+                    (192, max(1, round(gray.shape[0] * scale))),
+                    interpolation=cv2.INTER_AREA,
+                )
+            histogram = cv2.calcHist([gray], [0], None, [32], [0, 256])
+            cv2.normalize(histogram, histogram)
+            if previous_gray is not None and previous_histogram is not None:
+                motion = float(np.mean(cv2.absdiff(gray, previous_gray))) / 255.0
+                correlation = float(cv2.compareHist(previous_histogram, histogram, cv2.HISTCMP_CORREL))
+                edge = float(np.count_nonzero(cv2.Canny(gray, 70, 170))) / max(1.0, float(gray.size))
+                anomaly = motion * 0.72 + max(0.0, 1.0 - correlation) * 0.23 + edge * 0.05
+                anomaly_scores.append((decoded, anomaly))
+                motion_values.append(motion)
+                if motion >= 0.18 and correlation < 0.65:
+                    scene_boundaries.append(decoded)
+            previous_gray = gray
+            previous_histogram = histogram
+            decoded += 1
+    finally:
+        capture.release()
+
+    actual_count = decoded or reported_frame_count
+    selected = _select_adaptive_frame_positions(
+        actual_count,
+        anomaly_scores,
+        scene_boundaries,
+        fps=fps,
+        limit=max_frames,
+    )
+    windows = _select_temporal_windows(
+        actual_count,
+        anomaly_scores,
+        fps=fps,
+        limit=max_windows,
+    )
+    second_order = [abs(motion_values[index] - motion_values[index - 1]) for index in range(1, len(motion_values))]
+    return {
+        "status": "completed",
+        "decoded_frames": decoded,
+        "selected_positions": selected,
+        "scene_boundary_count": len(scene_boundaries),
+        "anomaly_peak_count": min(len(anomaly_scores), max(1, max_frames // 3)),
+        "temporal_windows": windows,
+        "second_order_motion_mean": round(float(np.mean(second_order)), 6) if second_order else 0.0,
+        "second_order_motion_p95": round(float(np.quantile(second_order, 0.95)), 6) if second_order else 0.0,
+        "selection_note": "Complete-video cheap scan; neural inference is limited to diverse and suspicious frames.",
+    }
+
+
+def _select_adaptive_frame_positions(
+    frame_count: int,
+    anomaly_scores: List[tuple[int, float]],
+    scene_boundaries: List[int],
+    *,
+    fps: float,
+    limit: int,
+) -> List[int]:
+    if frame_count <= 0:
+        return []
+    limit = min(max(1, limit), frame_count)
+    selected = set(_uniform_frame_positions(frame_count, min(limit, max(16, limit // 2))))
+    selected.update(index for index in scene_boundaries if 0 <= index < frame_count)
+    peak_limit = max(1, limit // 3)
+    peaks = sorted(anomaly_scores, key=lambda item: item[1], reverse=True)[:peak_limit]
+    neighbor = max(1, int(round(fps * 0.20))) if fps > 0 else 1
+    for index, _ in peaks:
+        selected.update({index, index - 1, index + 1, index - neighbor, index + neighbor})
+    selected = {index for index in selected if 0 <= index < frame_count}
+    if len(selected) <= limit:
+        return sorted(selected)
+    priorities = {index: score for index, score in anomaly_scores}
+    required = {0, frame_count - 1}
+    required.update(_uniform_frame_positions(frame_count, min(16, limit)))
+    ordered_optional = sorted(
+        selected - required,
+        key=lambda index: (priorities.get(index, 0.0), -index),
+        reverse=True,
+    )
+    return sorted([*required, *ordered_optional[: max(0, limit - len(required))]])[:limit]
+
+
+def _select_temporal_windows(
+    frame_count: int,
+    anomaly_scores: List[tuple[int, float]],
+    *,
+    fps: float,
+    limit: int,
+) -> List[Dict[str, int | str]]:
+    if frame_count <= 0:
+        return []
+    half_width = max(2, int(round(fps * 0.75))) if fps > 0 else max(2, frame_count // 40)
+    peak_centers = [index for index, _ in sorted(anomaly_scores, key=lambda item: item[1], reverse=True)]
+    uniform_centers = _uniform_frame_positions(frame_count, min(4, limit))
+    windows: List[Dict[str, int | str]] = []
+    for center in [*peak_centers, *uniform_centers]:
+        start = max(0, center - half_width)
+        end = min(frame_count - 1, center + half_width)
+        if any(not (end < int(item["start_frame"]) or start > int(item["end_frame"])) for item in windows):
+            continue
+        windows.append(
+            {
+                "start_frame": start,
+                "end_frame": end,
+                "selection_reason": "anomaly_peak" if center in peak_centers else "uniform_coverage",
+            }
+        )
+        if len(windows) >= limit:
+            break
+    return sorted(windows, key=lambda item: int(item["start_frame"]))
+
+
+def _window_scores(
+    windows: List[Dict[str, Any]],
+    frame_results: List[Dict[str, Any]],
+    fps: float,
+) -> List[Dict[str, Any]]:
+    scored: List[Dict[str, Any]] = []
+    for window in windows:
+        start = int(window.get("start_frame", 0))
+        end = int(window.get("end_frame", start))
+        values = [
+            combined_synthetic_probability(frame.get("detectors", []))
+            for frame in frame_results
+            if start <= int(frame.get("source_frame_index", -1)) <= end
+        ]
+        probabilities = [float(value) for value in values if value is not None]
+        manipulation_values = [
+            float(detector["manipulation_probability"])
+            for frame in frame_results
+            if start <= int(frame.get("source_frame_index", -1)) <= end
+            for detector in (frame.get("detectors", []) if isinstance(frame.get("detectors"), list) else [])
+            if detector.get("status") == "completed"
+            and isinstance(detector.get("manipulation_probability"), (int, float))
+        ]
+        scored.append(
+            {
+                **window,
+                "start_seconds": round(start / fps, 4) if fps > 0 else None,
+                "end_seconds": round(end / fps, 4) if fps > 0 else None,
+                "frames_analyzed": len(probabilities),
+                "generation_score": round(sum(probabilities) / len(probabilities), 4) if probabilities else None,
+                "manipulation_score": (
+                    round(sum(manipulation_values) / len(manipulation_values), 4)
+                    if manipulation_values
+                    else None
+                ),
+            }
+        )
+    return scored
+
+
+def _second_order_temporal_detector(scan: Dict[str, Any]) -> Dict[str, Any]:
+    p95 = float(scan.get("second_order_motion_p95") or 0.0)
+    return {
+        "name": "second_order_temporal_screen",
+        "status": "completed" if scan.get("status") == "completed" else "unavailable",
+        "label": "elevated_second_order_change" if p95 >= 0.20 else "ordinary_second_order_change",
+        "score": round(min(1.0, p95 * 3.0), 4),
+        "synthetic_probability": None,
+        "manipulation_probability": None,
+        "task": "temporal",
+        "model_version": "truthshield-second-order-screen-v4",
+        "calibration_id": None,
+        "details": {
+            "second_order_motion_mean": scan.get("second_order_motion_mean"),
+            "second_order_motion_p95": scan.get("second_order_motion_p95"),
+            "decisive_capable": False,
+            "note": "Cheap second-order motion evidence. The official optional D3 checkpoint is not claimed unless separately configured and licensed.",
+        },
+    }
 
 
 def _top_repeated_messages(counts: Counter[str], limit: int) -> List[str]:

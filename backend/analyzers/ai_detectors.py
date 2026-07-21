@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Sequence
 
 from PIL import Image
 
+from analyzers.community_forensics import run_community_forensics
 from analyzers.config import get_settings
 
 
@@ -34,6 +35,18 @@ REAL_LABEL_MARKERS = (
     "human made",
     "photograph",
 )
+MANIPULATION_LABEL_MARKERS = (
+    "edited",
+    "manipulated",
+    "tampered",
+    "inpaint",
+    "face swap",
+    "faceswap",
+    "retouched",
+    "composited",
+)
+
+
 def run_image_detectors(
     image: Image.Image,
     filename: str,
@@ -64,7 +77,9 @@ def run_image_detectors(
 
     configured_models = list(model_ids) if model_ids is not None else settings.ai_image_detector_models
     for model_id in configured_models:
-        results.append(_run_huggingface_detector(image, model_id))
+        results.append(_run_huggingface_detector(image, model_id, task="generation"))
+    for model_id in settings.ai_manipulation_detector_models:
+        results.append(_run_huggingface_detector(image, model_id, task="manipulation"))
     return results
 
 
@@ -106,6 +121,11 @@ def reuse_full_frame_predictions_as_single_tile(
                 "label": source.get("label"),
                 "score": source.get("score"),
                 "synthetic_probability": source.get("synthetic_probability"),
+                "manipulation_probability": None,
+                "task": "generation",
+                "model_version": source.get("model_version") or model_id,
+                "calibration_id": source.get("calibration_id"),
+                "suspicious_regions": [],
                 "details": {
                     "model_provider": "huggingface_local",
                     "tile_count": 1,
@@ -131,9 +151,10 @@ def highest_synthetic_probability(detectors: List[Dict[str, Any]]) -> float | No
 
 def combined_synthetic_probability(detectors: List[Dict[str, Any]]) -> float | None:
     learned_probabilities = []
-    truthshield_probabilities = []
     fallback_probabilities = []
     for detector in detectors:
+        if str(detector.get("task") or "generation") != "generation":
+            continue
         probability = detector.get("synthetic_probability")
         if not isinstance(probability, (int, float)) or not math.isfinite(float(probability)):
             continue
@@ -145,18 +166,20 @@ def combined_synthetic_probability(detectors: List[Dict[str, Any]]) -> float | N
             if (detector.get("details") or {}).get("reused_full_frame_prediction"):
                 continue
             weight = 0.75
+        elif name.startswith("community-forensics::"):
+            weight = 1.25
+        elif "truthshield-image-detector" in name.lower():
+            weight = 0.75
         else:
             weight = 1.0
         if detector.get("status") == "completed":
             learned_probabilities.append((float(probability), weight))
-            if "truthshield-image-detector" in name.lower():
-                truthshield_probabilities.append((float(probability), weight))
 
     # Hand-written image statistics are only a fallback. Averaging them into a
     # completed learned model can erase a correct high-confidence prediction
     # (modern generated images often have perfectly ordinary entropy, sharpness,
     # and compression). This was the main cause of contradictory app reports.
-    weighted_probabilities = truthshield_probabilities or learned_probabilities or fallback_probabilities
+    weighted_probabilities = learned_probabilities or fallback_probabilities
     if not weighted_probabilities:
         return None
     if len(weighted_probabilities) == 1:
@@ -165,12 +188,7 @@ def combined_synthetic_probability(detectors: List[Dict[str, Any]]) -> float | N
     weighted_average = sum(probability * weight for probability, weight in weighted_probabilities) / sum(
         weight for _, weight in weighted_probabilities
     )
-    peak = max(probability for probability, _ in weighted_probabilities)
-    if peak >= 0.85 and weighted_average >= 0.55:
-        combined = peak * 0.55 + weighted_average * 0.45
-    else:
-        combined = peak * 0.25 + weighted_average * 0.75
-    return max(0.0, min(1.0, combined))
+    return max(0.0, min(1.0, weighted_average))
 
 
 def completed_model_count(detectors: List[Dict[str, Any]]) -> int:
@@ -178,6 +196,7 @@ def completed_model_count(detectors: List[Dict[str, Any]]) -> int:
         1
         for detector in detectors
         if detector.get("status") == "completed"
+        and str(detector.get("task") or "generation") == "generation"
         and detector.get("name") != "local_heuristic_synthetic_likelihood"
         and isinstance(detector.get("synthetic_probability"), (int, float))
         and math.isfinite(float(detector["synthetic_probability"]))
@@ -242,6 +261,9 @@ def _heuristic_synthetic_detector(filename: str, metadata_present: bool, technic
         "label": label,
         "score": round(probability, 3),
         "synthetic_probability": round(probability, 3),
+        "manipulation_probability": None,
+        "task": "supporting",
+        "model_version": "truthshield-local-heuristics-v4",
         "details": {
             "reasons": reasons,
             "model_type": "deterministic_supporting_heuristic",
@@ -250,7 +272,14 @@ def _heuristic_synthetic_detector(filename: str, metadata_present: bool, technic
     }
 
 
-def _run_huggingface_detector(image: Image.Image, model_id: str) -> Dict[str, Any]:
+def _run_huggingface_detector(image: Image.Image, model_id: str, task: str = "generation") -> Dict[str, Any]:
+    if model_id.startswith("community-forensics::"):
+        settings = get_settings()
+        return run_community_forensics(
+            image,
+            model_id.split("::", 1)[1],
+            settings.community_forensics_repo_path,
+        )
     try:
         classifier = _load_pipeline(model_id)
         prepared = _prepare_classifier_image(classifier, image)
@@ -265,6 +294,9 @@ def _run_huggingface_detector(image: Image.Image, model_id: str) -> Dict[str, An
             "label": None,
             "score": None,
             "synthetic_probability": None,
+            "manipulation_probability": None,
+            "task": task,
+            "model_version": model_id,
             "details": {"reason": "Install transformers and torch to enable this free local model."},
         }
     except Exception as exc:
@@ -274,24 +306,32 @@ def _run_huggingface_detector(image: Image.Image, model_id: str) -> Dict[str, An
             "label": None,
             "score": None,
             "synthetic_probability": None,
+            "manipulation_probability": None,
+            "task": task,
+            "model_version": model_id,
             "details": {"reason": str(exc)[:300]},
         }
 
     normalized = _normalize_outputs(outputs)
     synthetic_probability = _synthetic_probability(normalized)
+    manipulation_probability = _manipulation_probability(normalized)
     top = normalized[0] if normalized else {"label": "unknown", "score": 0.0}
-    if synthetic_probability is None:
+    requested_probability = manipulation_probability if task == "manipulation" else synthetic_probability
+    if requested_probability is None:
         return {
             "name": model_id,
             "status": "unsupported_labels" if normalized else "error",
             "label": str(top["label"]) if normalized else None,
             "score": round(float(top["score"]), 4) if normalized else None,
             "synthetic_probability": None,
+            "manipulation_probability": None,
+            "task": task,
+            "model_version": model_id,
             "details": {
                 "model_provider": "huggingface_local",
                 "top_labels": normalized[:5],
                 "reason": (
-                    "The model labels could not be mapped unambiguously to synthetic and authentic classes."
+                    f"The model labels could not be mapped unambiguously to the {task} task."
                     if normalized
                     else "The model returned no usable predictions."
                 ),
@@ -302,10 +342,15 @@ def _run_huggingface_detector(image: Image.Image, model_id: str) -> Dict[str, An
         "status": "completed",
         "label": str(top["label"]),
         "score": round(float(top["score"]), 4),
-        "synthetic_probability": round(synthetic_probability, 4),
+        "synthetic_probability": round(synthetic_probability, 4) if task == "generation" and synthetic_probability is not None else None,
+        "manipulation_probability": round(manipulation_probability, 4) if manipulation_probability is not None else None,
+        "task": task,
+        "model_version": model_id,
+        "calibration_id": "bootstrap-conservative-v4",
         "details": {
             "model_provider": "huggingface_local",
             "top_labels": normalized[:5],
+            "manipulation_screening_capable": manipulation_probability is not None,
             "note": "Model output is an evidence signal, not proof of authenticity or manipulation.",
         },
     }
@@ -368,6 +413,15 @@ def _run_huggingface_detector_batch(
         "label": "tiled_regions_likely_synthetic" if aggregate >= 0.65 else "tiled_regions_uncertain" if aggregate >= 0.35 else "tiled_regions_lower_signal",
         "score": round(aggregate, 4),
         "synthetic_probability": round(aggregate, 4),
+        "manipulation_probability": None,
+        "task": "generation",
+        "model_version": model_id,
+        "calibration_id": "bootstrap-conservative-v4",
+        "suspicious_regions": [
+            {"box": list(boxes[index]), "generation_score": round(probabilities[index], 4)}
+            for index in highest_indices
+            if index < len(boxes)
+        ],
         "details": {
             "model_provider": "huggingface_local",
             "tile_count": len(probabilities),
@@ -394,6 +448,9 @@ def _model_error(model_id: str, exc: Exception, suffix: str = "") -> Dict[str, A
         "label": None,
         "score": None,
         "synthetic_probability": None,
+        "manipulation_probability": None,
+        "task": "generation",
+        "model_version": model_id,
         "details": {"reason": str(exc)[:300]},
     }
 
@@ -515,6 +572,25 @@ def _synthetic_probability(outputs: List[Dict[str, Any]]) -> float | None:
     if synthetic == 0.0 and real == 0.0:
         return None
     return max(0.0, min(1.0, synthetic / max(1e-6, synthetic + real)))
+
+
+def _manipulation_probability(outputs: List[Dict[str, Any]]) -> float | None:
+    manipulated = 0.0
+    other = 0.0
+    found_label = False
+    for item in outputs:
+        label = _normalized_label(item["label"])
+        score = float(item["score"])
+        if not math.isfinite(score) or score < 0.0:
+            continue
+        if any(marker in label for marker in MANIPULATION_LABEL_MARKERS):
+            manipulated += score
+            found_label = True
+        else:
+            other += score
+    if not found_label:
+        return None
+    return max(0.0, min(1.0, manipulated / max(1e-6, manipulated + other)))
 
 
 def _float_detail(details: Dict[str, Any], key: str) -> float | None:

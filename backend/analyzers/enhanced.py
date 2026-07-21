@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import io
 from typing import Any, Dict, List, Sequence
 
 from PIL import Image
 
 from analyzers.ai_detectors import combined_synthetic_probability, completed_model_count, run_image_detectors
 from analyzers.config import get_settings
-from analyzers.feedback import build_custom_feedback, build_image_feedback, build_video_feedback
+from analyzers.feedback import build_custom_feedback, build_media_feedback
 from analyzers.fingerprints import build_image_fingerprint
 from analyzers.image_decision import assess_image_evidence
+from analyzers.media_decision import assess_media_evidence
 from analyzers.provenance import verify_image_provenance
 from analyzers.scoring import clamp_score, get_risk_level, summarize_result, unique_messages
 from analyzers.web_research import research_image_context, research_text_claims, research_video_context
@@ -33,6 +35,17 @@ def enhance_image_result(
         result["technical_details"] = technical
     metadata_present = bool(technical.get("metadata_fields_found"))
     detectors = run_image_detectors(image, filename, metadata_present, technical, model_ids=detector_model_ids)
+    if settings.image_transformation_checks:
+        stability = _controlled_view_stability(
+            image,
+            filename,
+            metadata_present,
+            technical,
+            detector_model_ids,
+            detectors,
+        )
+        technical["transformation_instability"] = stability
+        detectors.append(stability["detector"])
     provenance = verify_image_provenance(content_bytes, filename) if content_bytes else None
     web_research = (
         research_image_context(filename, attachment_fingerprint=attachment_fingerprint, content_bytes=content_bytes)
@@ -59,7 +72,7 @@ def enhance_image_result(
 
     warnings = list(result.get("warnings", []))
     positives = list(result.get("positive_signals", []))
-    if assessment["verdict"] == "likely_ai_generated_or_manipulated":
+    if assessment["verdict"] in {"likely_ai_generated", "likely_ai_manipulated"}:
         warnings.extend(assessment["evidence_raising_concern"])
         positives = [
             message
@@ -121,7 +134,7 @@ def enhance_image_result(
             if not learned_model_available and detector_probability is not None
             else None
         ),
-        "scoring_mode": "three_way_evidence_assessment",
+        "scoring_mode": "four_way_calibrated_media_assessment",
         "decision": assessment["verdict"],
     }
     technical["decision_debug"] = decision_debug
@@ -146,7 +159,7 @@ def enhance_image_result(
             "assessment": assessment,
         }
     )
-    result["custom_feedback"] = build_image_feedback(assessment, result.get("recommendations", []))
+    result["custom_feedback"] = build_media_feedback(assessment, result.get("recommendations", []), "image")
     return result
 
 
@@ -242,6 +255,10 @@ def enhance_video_result(
         "label": _probability_label(summarized_probability),
         "score": summarized_probability,
         "synthetic_probability": summarized_probability,
+        "manipulation_probability": None,
+        "task": "generation",
+        "model_version": "truthshield-frame-fusion-v4",
+        "calibration_id": "bootstrap-conservative-v4",
         "details": {
             "frames_with_detector_signals": len(frame_probabilities),
             "frames_with_learned_detector_signals": learned_frame_signal_count,
@@ -251,7 +268,34 @@ def enhance_video_result(
             "note": "Frame evidence uses a robust mean, upper percentile, high-risk ratio, and sustained-run ratio instead of trusting one isolated frame.",
         },
     }
-    detectors = [frame_summary_detector, *(video_detectors or result.get("detectors", []))]
+    frame_manipulation_values = [
+        float(detector["manipulation_probability"])
+        for frame in frame_results
+        for detector in (frame.get("detectors", []) if isinstance(frame.get("detectors"), list) else [])
+        if detector.get("status") == "completed"
+        and isinstance(detector.get("manipulation_probability"), (int, float))
+    ]
+    frame_manipulation_probability = _robust_frame_probability(frame_manipulation_values)
+    manipulation_summary_detector = {
+        "name": "all_frame_manipulation_screen_summary",
+        "status": "completed" if frame_manipulation_probability is not None else "unavailable",
+        "label": "editing_signal_summary",
+        "score": frame_manipulation_probability,
+        "synthetic_probability": None,
+        "manipulation_probability": frame_manipulation_probability,
+        "task": "supporting",
+        "model_version": "truthshield-frame-manipulation-screen-v4",
+        "calibration_id": "bootstrap-conservative-v4",
+        "details": {
+            "frames_with_manipulation_signals": len(frame_manipulation_values),
+            "note": "This aggregate can support a low manipulation score, but cannot issue a positive manipulation verdict without a dedicated specialist.",
+        },
+    }
+    detectors = [
+        frame_summary_detector,
+        manipulation_summary_detector,
+        *(video_detectors or result.get("detectors", [])),
+    ]
     trained_video_model_available = any(
         detector.get("name") == "trained_truthshield_video_detector"
         and detector.get("status") == "completed"
@@ -262,7 +306,9 @@ def enhance_video_result(
     weighted_probabilities: List[tuple[float, float]] = []
     if isinstance(summarized_probability, (int, float)):
         weighted_probabilities.append((float(summarized_probability), 1.25))
-    for detector in detectors[1:]:
+    for detector in detectors[2:]:
+        if str(detector.get("task") or "generation") != "generation":
+            continue
         probability = detector.get("synthetic_probability")
         if not isinstance(probability, (int, float)):
             continue
@@ -280,27 +326,47 @@ def enhance_video_result(
         for warning in frame.get("warnings", [])[:2]
     ]
     web_research = research_video_context(filename, frame_notes)
-    base_score = float(result.get("truth_score", 50))
-    detector_truth = 50.0 if detector_probability is None else 100.0 - detector_probability * 100.0
+    final_score = clamp_score(float(result.get("truth_score", 50)))
     web_score = float(web_research["score"])
-    final_score = clamp_score(base_score * 0.50 + detector_truth * 0.38 + web_score * 0.12)
     warnings = list(result.get("warnings", []))
     positives = list(result.get("positive_signals", []))
-    if detector_probability is not None and detector_probability >= 0.70:
-        warnings.append("Frame and temporal detector signals indicate a high likelihood of synthetic video.")
-    elif detector_probability is not None and detector_probability <= 0.30:
-        positives.append("Frame and temporal detectors did not show strong synthetic-video signals.")
-    if web_research["matches_found"] > 0:
-        positives.append("Automated indexed web research found possible video context leads.")
-    elif web_research["status"] == "no_results":
-        warnings.append("Automated indexed web research did not find corroborating context for this video.")
-
-    risk_level, verdict = get_risk_level(final_score)
+    window_instability = _video_window_instability(
+        technical,
+        frame_probabilities,
+        frame_manipulation_values,
+    )
+    dedicated_manipulation_available = any(
+        detector.get("task") == "manipulation"
+        and detector.get("status") == "completed"
+        and isinstance(detector.get("manipulation_probability"), (int, float))
+        for frame in frame_results
+        for detector in (frame.get("detectors", []) if isinstance(frame.get("detectors"), list) else [])
+    )
+    persistent_manipulation = _persistent_probability(frame_manipulation_values, 0.95)
+    assessment, decision_debug = assess_media_evidence(
+        detectors,
+        technical,
+        None,
+        web_research,
+        media_type="video",
+        generation_score=detector_probability if learned_model_available else None,
+        manipulation_score=frame_manipulation_probability,
+        transformation_instability=window_instability,
+        localized_or_persistent_manipulation=persistent_manipulation,
+        generation_specialist_available=learned_model_available,
+        manipulation_specialist_available=bool(frame_manipulation_values),
+    )
+    if assessment["verdict"] in {"likely_ai_generated", "likely_ai_manipulated"}:
+        warnings.extend(assessment["evidence_raising_concern"])
+    positives.extend(assessment["evidence_supporting_authenticity"])
+    risk_level = assessment["label"]
+    verdict = assessment["label"]
     evidence = dict(result.get("evidence", {}))
     evidence.update(
         {
-            "sampled_frame_ai_generation_score": round(100.0 - detector_truth, 2),
-            "video_ai_generation_score": round(100.0 - detector_truth, 2),
+            "sampled_frame_ai_generation_score": round(float(detector_probability or 0.0) * 100.0, 2),
+            "video_ai_generation_score": round(float(detector_probability or 0.0) * 100.0, 2),
+            "video_manipulation_score": round(float(frame_manipulation_probability or 0.0) * 100.0, 2),
             "web_corroboration_score": round(web_score, 2),
             "overall_risk_score": float(100 - final_score),
         }
@@ -311,13 +377,19 @@ def enhance_video_result(
         "synthetic_probability": round(detector_probability, 4) if learned_model_available and detector_probability is not None else None,
         "fallback_heuristic_score": round(detector_probability, 4) if not learned_model_available and detector_probability is not None else None,
         "scoring_mode": "video_frame_and_temporal_evidence",
+        "decision": assessment["verdict"],
     }
+    technical["decision_debug"] = decision_debug
+    technical["legacy_context_score_note"] = (
+        "truth_score is deprecated compatibility context and does not determine the media assessment. "
+        "Web research, missing metadata, and compression are not blended into generation or manipulation scores."
+    )
     result.update(
         {
             "truth_score": final_score,
             "risk_level": risk_level,
             "verdict": verdict,
-            "summary": summarize_result("video", final_score, warnings, positives),
+            "summary": assessment["reason"],
             "warnings": unique_messages(warnings),
             "positive_signals": unique_messages(positives),
             "evidence": evidence,
@@ -333,15 +405,10 @@ def enhance_video_result(
             "provenance": None,
             "web_research": web_research,
             "citations": web_research.get("citations", []),
+            "assessment": assessment,
         }
     )
-    result["custom_feedback"] = build_video_feedback(
-        detector_probability,
-        learned_model_available,
-        result["warnings"],
-        result["positive_signals"],
-        result.get("recommendations", []),
-    )
+    result["custom_feedback"] = build_media_feedback(assessment, result.get("recommendations", []), "video")
     return result
 
 
@@ -386,6 +453,160 @@ def _robust_frame_probability(probabilities: List[float]) -> float | None:
     p90 = ordered[lower] * (1.0 - (position - lower)) + ordered[upper] * (position - lower)
     high_ratio = sum(value >= 0.65 for value in ordered) / len(ordered)
     return max(0.0, min(1.0, mean * 0.55 + p90 * 0.30 + high_ratio * 0.15))
+
+
+def _controlled_view_stability(
+    image: Image.Image,
+    filename: str,
+    metadata_present: bool,
+    technical: Dict[str, Any],
+    detector_model_ids: Sequence[str] | None,
+    original_detectors: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    original_score = combined_synthetic_probability(original_detectors)
+    scores = [float(original_score)] if isinstance(original_score, (int, float)) else []
+    original_manipulation = _combined_manipulation_probability(original_detectors)
+    manipulation_scores = (
+        [float(original_manipulation)] if isinstance(original_manipulation, (int, float)) else []
+    )
+    views: List[tuple[str, Image.Image]] = []
+    rgb = image.convert("RGB")
+    longest = max(rgb.size)
+    if longest > 768:
+        scale = 768.0 / longest
+        views.append(("resized_768", rgb.resize(
+            (max(1, round(rgb.width * scale)), max(1, round(rgb.height * scale))),
+            Image.Resampling.LANCZOS,
+        )))
+    buffer = io.BytesIO()
+    rgb.save(buffer, format="JPEG", quality=78, optimize=False)
+    buffer.seek(0)
+    with Image.open(buffer) as recompressed:
+        views.append(("jpeg_q78", recompressed.convert("RGB")))
+
+    predictions: List[Dict[str, Any]] = []
+    for view_name, view in views:
+        view_detectors = run_image_detectors(
+            view,
+            filename,
+            metadata_present,
+            technical,
+            model_ids=detector_model_ids,
+        )
+        score = combined_synthetic_probability(view_detectors)
+        manipulation = _combined_manipulation_probability(view_detectors)
+        predictions.append(
+            {
+                "view": view_name,
+                "generation_score": round(score, 4) if score is not None else None,
+                "manipulation_score": round(manipulation, 4) if manipulation is not None else None,
+            }
+        )
+        if score is not None:
+            scores.append(float(score))
+        if manipulation is not None:
+            manipulation_scores.append(float(manipulation))
+    generation_range = max(scores) - min(scores) if len(scores) >= 2 else None
+    manipulation_range = (
+        max(manipulation_scores) - min(manipulation_scores)
+        if len(manipulation_scores) >= 2
+        else None
+    )
+    available_ranges = [value for value in (generation_range, manipulation_range) if value is not None]
+    score_range = max(available_ranges) if available_ranges else None
+    detector = {
+        "name": "controlled_view_stability",
+        "status": "completed" if len(scores) >= 2 else "unavailable",
+        "label": "stable" if score_range is not None and score_range <= 0.18 else "unstable" if score_range is not None else None,
+        "score": round(score_range, 4) if score_range is not None else None,
+        "synthetic_probability": None,
+        "manipulation_probability": None,
+        "task": "supporting",
+        "model_version": "truthshield-controlled-views-v4",
+        "calibration_id": "bootstrap-conservative-v4",
+        "details": {
+            "predictions": predictions,
+            "score_range": score_range,
+            "generation_score_range": generation_range,
+            "manipulation_score_range": manipulation_range,
+        },
+    }
+    return {
+        "score_range": score_range,
+        "generation_score_range": generation_range,
+        "manipulation_score_range": manipulation_range,
+        "predictions": predictions,
+        "detector": detector,
+    }
+
+
+def _combined_manipulation_probability(detectors: List[Dict[str, Any]]) -> float | None:
+    values = [
+        float(detector["manipulation_probability"])
+        for detector in detectors
+        if detector.get("status") == "completed"
+        and detector.get("name") != "local_heuristic_synthetic_likelihood"
+        and isinstance(detector.get("manipulation_probability"), (int, float))
+    ]
+    return sum(values) / len(values) if values else None
+
+
+def _video_window_instability(
+    technical: Dict[str, Any],
+    frame_probabilities: List[float],
+    manipulation_probabilities: List[float],
+) -> float | None:
+    windows = technical.get("temporal_windows")
+    if isinstance(windows, list):
+        generation_values = [
+            float(window["generation_score"])
+            for window in windows
+            if isinstance(window, dict) and isinstance(window.get("generation_score"), (int, float))
+        ]
+        manipulation_values = [
+            float(window["manipulation_score"])
+            for window in windows
+            if isinstance(window, dict) and isinstance(window.get("manipulation_score"), (int, float))
+        ]
+        ranges = [
+            max(values) - min(values)
+            for values in (generation_values, manipulation_values)
+            if len(values) >= 2
+        ]
+        if ranges:
+            return max(ranges)
+    ranges = [
+        value
+        for value in (
+            _windowed_series_range(frame_probabilities),
+            _windowed_series_range(manipulation_probabilities),
+        )
+        if value is not None
+    ]
+    return max(ranges) if ranges else None
+
+
+def _windowed_series_range(values: List[float]) -> float | None:
+    if len(values) < 8:
+        return None
+    window_size = max(2, len(values) // 8)
+    means = [
+        sum(values[index:index + window_size]) / len(values[index:index + window_size])
+        for index in range(0, len(values), window_size)
+        if values[index:index + window_size]
+    ]
+    return max(means) - min(means) if len(means) >= 2 else None
+
+
+def _persistent_probability(values: List[float], threshold: float) -> bool:
+    if len(values) < 3:
+        return False
+    run = 0
+    for value in values:
+        run = run + 1 if value >= threshold else 0
+        if run >= 3:
+            return True
+    return False
 
 
 def _analysis_mode(web_research: Dict[str, Any] | None) -> str:

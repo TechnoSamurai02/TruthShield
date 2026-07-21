@@ -11,108 +11,8 @@ def build_image_feedback(
     assessment: Dict[str, Any],
     recommendations: List[str],
 ) -> Dict[str, Any]:
-    """Turn image evidence into cautious language for a general audience."""
-    verdict = str(assessment.get("verdict") or "inconclusive")
-    signals = assessment.get("signals") if isinstance(assessment.get("signals"), list) else []
-    reasons_ai: List[str] = []
-    reasons_not_ai: List[str] = []
-    learned_detector_available = False
-
-    for value in signals:
-        if not isinstance(value, dict):
-            continue
-        source = str(value.get("source") or "")
-        signal = str(value.get("signal") or "")
-        status = str(value.get("status") or "")
-        raw_score = value.get("raw_score")
-
-        if source == "dedicated_detector":
-            learned_detector_available = status == "completed" and isinstance(raw_score, (int, float))
-            if signal == "ai_generated_or_manipulated":
-                reasons_ai.append(
-                    "The trained image model found a very strong match with patterns it learned from AI-generated images."
-                )
-            elif signal == "authentic":
-                reasons_not_ai.append(
-                    "The trained image model found very little resemblance to the AI-generated images it learned from."
-                )
-            elif learned_detector_available and float(raw_score) >= 0.5:
-                reasons_ai.append(
-                    "The image model noticed some AI-like patterns, but the signal was not strong enough to call the image AI-generated."
-                )
-            elif learned_detector_available:
-                reasons_not_ai.append(
-                    "The image model leaned away from AI generation, but not strongly enough to call the image authentic."
-                )
-        elif source == "metadata" and signal == "ai_generated_or_manipulated":
-            reasons_ai.append("The file says it was saved by AI-generation software.")
-        elif source == "metadata" and signal == "authentic":
-            reasons_not_ai.append(
-                "The file includes camera make or model information. This supports a camera origin, although metadata can be changed."
-            )
-        elif source == "pixel_forensics" and signal == "ai_generated_or_manipulated":
-            reasons_ai.append(
-                "A separate pixel check found unusual patterns sometimes seen in AI images. Editing and compression can cause similar patterns."
-            )
-        elif source == "provenance" and signal == "authentic":
-            reasons_not_ai.append("The file includes verifiable content credentials that help trace where it came from.")
-        elif source == "web_context" and signal == "authentic":
-            reasons_not_ai.append(
-                "A matching or closely related version was found online, which gives the image more real-world context."
-            )
-
-    if verdict == "likely_ai_generated_or_manipulated" and reasons_ai:
-        headline = "This image may be AI-generated or altered"
-        summary = (
-            "The strongest available checks point toward AI generation or meaningful digital alteration. "
-            "This is a warning, not proof."
-        )
-        uncertainty_note = (
-            "A real photo that was heavily edited, compressed, or saved as a screenshot can sometimes look "
-            "AI-made to a detector."
-        )
-    elif not learned_detector_available:
-        summary = (
-            "The trained image detector did not return a usable result. The remaining checks are not strong enough "
-            "to decide whether this image is AI-generated."
-        )
-        headline = "We cannot reliably tell"
-        uncertainty_note = (
-            "Only weaker clues were available. Missing metadata, ordinary editing, compression, or no web match "
-            "cannot prove that an image is AI-generated."
-        )
-    elif verdict == "likely_authentic":
-        headline = "This image appears more likely to be a real photograph"
-        summary = (
-            "The strongest available checks lean away from AI generation, and no separate strong AI clue was found. "
-            "This does not guarantee that the image is authentic or unedited."
-        )
-        uncertainty_note = (
-            "New or unfamiliar AI tools can make images the model does not recognize. A likely-authentic result "
-            "also cannot prove that the image's caption or story is true."
-        )
-    else:
-        headline = "We cannot tell with enough confidence"
-        summary = (
-            "The available checks were mixed, missing, or not strong enough to support either an AI-generated "
-            "or an authentic result."
-        )
-        uncertainty_note = (
-            "Inconclusive does not mean a 50% chance of AI. It means the system is choosing not to guess from weak "
-            "or conflicting clues."
-        )
-
-    next_steps = _plain_media_next_steps(recommendations)
-    return {
-        "headline": headline,
-        "explanation": summary,
-        "plain_language_summary": summary,
-        "reasons_it_might_be_ai": _unique_strings(reasons_ai)[:4],
-        "reasons_it_might_not_be_ai": _unique_strings(reasons_not_ai)[:4],
-        "uncertainty_note": uncertainty_note,
-        "evidence_notes": [*_unique_strings(reasons_ai), *_unique_strings(reasons_not_ai)][:6],
-        "next_steps": next_steps,
-    }
+    """Compatibility wrapper for callers that still use the image-specific helper."""
+    return build_media_feedback(assessment, recommendations, "image")
 
 
 def build_video_feedback(
@@ -189,6 +89,68 @@ def build_video_feedback(
         "uncertainty_note": uncertainty_note,
         "evidence_notes": [*_unique_strings(reasons_ai), *_unique_strings(reasons_not_ai)][:6],
         "next_steps": next_steps,
+    }
+
+
+def build_media_feedback(
+    assessment: Dict[str, Any],
+    recommendations: List[str],
+    media_type: str,
+) -> Dict[str, Any]:
+    """Explain the v4 four-way assessment without turning scores into proof."""
+    verdict = str(assessment.get("verdict") or "inconclusive")
+    noun = "image" if media_type == "image" else "video"
+    generated = list(assessment.get("evidence_supporting_generation") or [])
+    manipulated = list(assessment.get("evidence_supporting_manipulation") or [])
+    authentic = list(assessment.get("evidence_supporting_authenticity") or [])
+    conflicts = list(assessment.get("evidence_conflicting") or [])
+    limitations = list(assessment.get("limitations") or [])
+
+    if verdict == "likely_ai_generated":
+        headline = f"This {noun} is likely AI-generated"
+        summary = (
+            "The generation evidence crossed the conservative policy threshold and remained stable. "
+            "This is a high-precision warning, not proof."
+        )
+    elif verdict == "likely_ai_manipulated":
+        headline = f"This {noun} is likely AI-edited or manipulated"
+        summary = (
+            "A dedicated manipulation check found strong localized or persistent evidence while full-generation "
+            "evidence stayed below its decisive threshold. This is a warning, not proof."
+        )
+    elif verdict == "likely_authentic":
+        headline = f"This {noun} is likely authentic"
+        summary = (
+            "Both generation and manipulation checks stayed below their conservative policy thresholds, all required "
+            "checks completed, and no positive AI evidence conflicted. This cannot prove the surrounding claim is true."
+        )
+    else:
+        headline = "We cannot tell with enough confidence"
+        summary = str(assessment.get("reason") or (
+            "The specialist evidence was uncertain, conflicting, unstable, incomplete, or inside an abstention band."
+        ))
+
+    uncertainty = (
+        "Detectors can fail on unfamiliar generators, editing styles, animation, CGI, screenshots, low quality, and "
+        "heavy compression. Inconclusive means the system refused to guess; it does not mean a 50% chance of AI."
+    )
+    if conflicts:
+        uncertainty = f"The policy abstained because evidence conflicted or changed across views/windows. {uncertainty}"
+    elif limitations:
+        uncertainty = f"Important limitation: {limitations[0]} {uncertainty}"
+
+    combined_ai = _unique_strings([*generated, *manipulated])[:4]
+    return {
+        "headline": headline,
+        "explanation": summary,
+        "plain_language_summary": summary,
+        "reasons_it_might_be_ai": combined_ai,
+        "reasons_it_might_be_generated": _unique_strings(generated)[:4],
+        "reasons_it_might_be_manipulated": _unique_strings(manipulated)[:4],
+        "reasons_it_might_not_be_ai": _unique_strings(authentic)[:4],
+        "uncertainty_note": uncertainty,
+        "evidence_notes": _unique_strings([*combined_ai, *authentic, *conflicts])[:8],
+        "next_steps": _plain_media_next_steps(recommendations),
     }
 
 

@@ -40,13 +40,20 @@ GOOGLE_VISION_API_KEY=
 GOOGLE_VISION_MAX_RESULTS=10
 ENABLE_LOCAL_AI_MODELS=true
 AI_IMAGE_DETECTOR_MODELS=Organika/sdxl-detector,dima806/deepfake_vs_real_image_detection
+AI_MANIPULATION_DETECTOR_MODELS=
+MEDIA_DECISION_POLICY_PATH=
+IMAGE_TRANSFORMATION_CHECKS=true
 AI_VIDEO_FRAME_DETECTOR_MODELS=
 AI_VIDEO_TEMPORAL_MODEL_PATH=
-VIDEO_ANALYSIS_MODE=exhaustive
+VIDEO_ANALYSIS_MODE=adaptive
 VIDEO_FRAME_STRIDE=1
 VIDEO_MAX_FRAMES=0
+VIDEO_KEYFRAME_MAX=64
+VIDEO_WINDOW_MAX=8
 VIDEO_TILE_ANALYSIS=true
+COMMUNITY_FORENSICS_REPO_PATH=
+COMMUNITY_FORENSICS_MODEL_ID=OwensLab/commfor-model-224
 LOCAL_REASONING_BASE_URL=
 ```
 
-`VIDEO_ANALYSIS_MODE=exhaustive`, `VIDEO_FRAME_STRIDE=1`, and `VIDEO_MAX_FRAMES=0` process every decoded frame. `VIDEO_TILE_ANALYSIS=true` adds overlapping full-coverage model tiles and can be very slow on a CPU. `GOOGLE_VISION_API_KEY`, `BRAVE_SEARCH_API_KEY`, trained model paths, C2PA tooling, and a local reasoning endpoint are optional. Image responses use a backend-owned three-way assessment. Missing providers, metadata, manifests, scores, or web matches return neutral/unavailable signals and never default to AI.
+`VIDEO_ANALYSIS_MODE=adaptive` decodes the complete video cheaply, selects up to 64 diverse/anomalous frames, and builds up to eight temporal windows. `exhaustive` remains available for rollback and debugging. `VIDEO_TILE_ANALYSIS=true` adds overlapping full-coverage model tiles and can be slow on a CPU. Image and video responses use the same four-way policy. Missing providers, metadata, manifests, scores, or web matches return neutral/unavailable signals and never default to AI.

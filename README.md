@@ -8,16 +8,16 @@ license: mit
 
 # TruthShield AI
 
-TruthShield AI helps people inspect suspicious images and videos before they trust or share them. Image reports combine available metadata, a dedicated detector, supporting pixel checks, provenance, and honest web context into a conservative three-way assessment.
+TruthShield AI helps people inspect suspicious images and videos before they trust or share them. Image and video reports use a shared, conservative, abstention-first four-way assessment.
 
-Image outcomes are `Likely authentic`, `Inconclusive`, or `Likely AI-generated or manipulated`. Raw detector scores are model outputs, not proof or calibrated real-world probabilities.
+Media outcomes are `Likely authentic`, `Likely AI-generated`, `Likely AI-edited/manipulated`, or `Inconclusive`. Raw detector scores are model outputs, not proof or real-world probabilities.
 
 ## Product Experience
 
 - Image analysis for `.jpg`, `.jpeg`, `.png`, and `.webp`
 - Video analysis for `.mp4`, `.mov`, and `.webm`
 - Drag-and-drop and keyboard-accessible file selection
-- Explainable three-way image verdict with evidence on both sides and explicit limitations
+- Explainable four-way image/video assessment with generation and manipulation evidence shown separately
 - Practical safety recommendations and development-mode intermediate-signal diagnostics
 - Packaged, held-out-tested image detector plus supporting pixel forensics
 - Video frame coverage and suspicious-frame evidence
@@ -76,7 +76,7 @@ VITE_API_BASE_URL=https://your-api.example.com
 
 ### `GET /api/health`
 
-Returns the backend service status.
+Returns service status, policy/calibration IDs, model artifact checksums, and decisive-verdict capabilities.
 
 ### `POST /api/analyze/image`
 
@@ -112,12 +112,19 @@ GOOGLE_VISION_API_KEY=
 GOOGLE_VISION_MAX_RESULTS=10
 ENABLE_LOCAL_AI_MODELS=true
 AI_IMAGE_DETECTOR_MODELS=
+AI_MANIPULATION_DETECTOR_MODELS=
+MEDIA_DECISION_POLICY_PATH=
+IMAGE_TRANSFORMATION_CHECKS=true
 AI_VIDEO_FRAME_DETECTOR_MODELS=
 AI_VIDEO_TEMPORAL_MODEL_PATH=
-VIDEO_ANALYSIS_MODE=exhaustive
+VIDEO_ANALYSIS_MODE=adaptive
 VIDEO_FRAME_STRIDE=1
 VIDEO_MAX_FRAMES=0
+VIDEO_KEYFRAME_MAX=64
+VIDEO_WINDOW_MAX=8
 VIDEO_TILE_ANALYSIS=true
+COMMUNITY_FORENSICS_REPO_PATH=
+COMMUNITY_FORENSICS_MODEL_ID=OwensLab/commfor-model-224
 LOCAL_REASONING_BASE_URL=
 ```
 
@@ -126,14 +133,14 @@ LOCAL_REASONING_BASE_URL=
 - The root Docker deployment packages `truthshield-image-detector-v2`; its raw score is evaluated through conservative abstention rules rather than used directly as the verdict.
 - Missing metadata, absent C2PA credentials, missing web matches, timeouts, null scores, and provider errors are neutral or unavailable—not AI evidence.
 
-### Image decision policy
+### Media decision policy
 
-- Dedicated-detector score `<= 0.15`: likely authentic when no independent positive AI evidence conflicts.
-- Score between `0.15` and `0.95`: inconclusive unless camera metadata or verified provenance safely corroborates a detector score `<= 0.30`.
-- Score `>= 0.95`: likely AI-generated/manipulated unless camera metadata or verified provenance creates an unresolved conflict.
-- An explicit AI-generator software metadata tag is positive AI evidence; filenames and missing metadata are not.
+- A generated verdict requires the calibrated generation score to cross its upper threshold and remain stable across views/windows.
+- A manipulated verdict requires a dedicated specialist plus localized or temporally persistent support.
+- An authentic verdict requires low generation and manipulation scores, completed required checks, sufficient quality, and no conflict.
+- All other cases are inconclusive. Explicit software metadata is separate positive evidence but cannot bypass a missing or sub-threshold generation specialist.
 
-The thresholds operate on the packaged model's raw AI-class score. They are not probability statements.
+Web matches, missing metadata, compression, and the deprecated `truth_score` are never blended into the AI decision. See `training/V4_ACCURACY_GUIDE.md` for generator-isolated calibration and promotion.
 
 ## Legacy context score
 

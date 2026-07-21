@@ -13,7 +13,7 @@ import numpy as np
 from PIL import Image
 
 from analyzers.enhanced import enhance_image_result, enhance_video_result
-from analyzers.feedback import build_image_feedback
+from analyzers.feedback import build_media_feedback
 from analyzers.ai_detectors import (
     _covering_tiles,
     _normalize_outputs,
@@ -98,11 +98,11 @@ class EnhancedAnalysisTests(unittest.TestCase):
         self.assertEqual(enhanced["truth_score"], 74)
         self.assertIn("ai_generation_score", enhanced["evidence"])
         self.assertTrue(enhanced["technical_details"]["ai_detector_summary"]["learned_model_available"])
-        self.assertEqual(enhanced["assessment"]["verdict"], "likely_ai_generated_or_manipulated")
+        self.assertEqual(enhanced["assessment"]["verdict"], "likely_ai_generated")
         feedback = enhanced["custom_feedback"]
-        self.assertEqual(feedback["headline"], "This image may be AI-generated or altered")
+        self.assertEqual(feedback["headline"], "This image is likely AI-generated")
         self.assertIn("warning, not proof", feedback["plain_language_summary"])
-        self.assertTrue(any("trained image model" in item for item in feedback["reasons_it_might_be_ai"]))
+        self.assertTrue(any("generation pipeline" in item for item in feedback["reasons_it_might_be_ai"]))
         self.assertIn("reasons_it_might_not_be_ai", feedback)
         self.assertTrue(feedback["uncertainty_note"])
         AnalysisResponse(**enhanced)
@@ -261,8 +261,8 @@ class EnhancedAnalysisTests(unittest.TestCase):
 
         self.assertEqual(frame_result["content_type"], "video_frame")
         self.assertFalse(enhanced_video["technical_details"]["ai_detector_summary"]["learned_model_available"])
-        self.assertEqual(enhanced_video["custom_feedback"]["headline"], "No reliable AI verdict for this video")
-        self.assertIn("not reliable enough", enhanced_video["custom_feedback"]["plain_language_summary"])
+        self.assertEqual(enhanced_video["custom_feedback"]["headline"], "We cannot tell with enough confidence")
+        self.assertIn("insufficient", enhanced_video["custom_feedback"]["plain_language_summary"])
         VideoAnalysisResponse(**enhanced_video)
 
     def test_exhaustive_video_mode_analyzes_every_decoded_frame(self) -> None:
@@ -489,7 +489,12 @@ class EnhancedAnalysisTests(unittest.TestCase):
             "compression_consistency": {"score": 70.0, "is_inconsistent": False},
         }
         authentic, _ = assess_image_evidence(
-            [{"name": "truthshield-image-detector-v2", "status": "completed", "synthetic_probability": 0.05}],
+            [{
+                "name": "truthshield-image-detector-v2",
+                "status": "completed",
+                "synthetic_probability": 0.05,
+                "manipulation_probability": 0.04,
+            }],
             common,
             None,
             None,
@@ -502,7 +507,7 @@ class EnhancedAnalysisTests(unittest.TestCase):
         )
 
         self.assertEqual(authentic["verdict"], "likely_authentic")
-        self.assertEqual(synthetic["verdict"], "likely_ai_generated_or_manipulated")
+        self.assertEqual(synthetic["verdict"], "likely_ai_generated")
 
     def test_camera_metadata_conflict_abstains(self) -> None:
         assessment, _ = assess_image_evidence(
@@ -530,10 +535,10 @@ class EnhancedAnalysisTests(unittest.TestCase):
             None,
         )
 
-        self.assertEqual(assessment["verdict"], "likely_ai_generated_or_manipulated")
+        self.assertEqual(assessment["verdict"], "inconclusive")
         self.assertTrue(any("ComfyUI" in item for item in assessment["evidence_raising_concern"]))
-        feedback = build_image_feedback(assessment, [])
-        self.assertEqual(feedback["headline"], "This image may be AI-generated or altered")
+        feedback = build_media_feedback(assessment, [], "image")
+        self.assertEqual(feedback["headline"], "We cannot tell with enough confidence")
         self.assertTrue(any("AI-generation software" in item for item in feedback["reasons_it_might_be_ai"]))
 
     def test_invalid_and_unknown_model_outputs_do_not_become_ai_scores(self) -> None:

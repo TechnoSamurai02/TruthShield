@@ -16,8 +16,11 @@ class SuspiciousFrame(BaseModel):
     timestamp_seconds: Optional[float] = None
     truth_score: int
     synthetic_probability: Optional[float] = None
+    manipulation_probability: Optional[float] = None
     tile_synthetic_probability: Optional[float] = None
     warnings: List[str]
+    kind: Optional[Literal["generation", "manipulation", "temporal_anomaly"]] = None
+    end_timestamp_seconds: Optional[float] = None
 
 
 class DetectorResult(BaseModel):
@@ -26,6 +29,11 @@ class DetectorResult(BaseModel):
     label: Optional[str] = None
     score: Optional[float] = None
     synthetic_probability: Optional[float] = None
+    manipulation_probability: Optional[float] = None
+    task: Optional[Literal["generation", "manipulation", "temporal", "provenance", "supporting"]] = None
+    model_version: Optional[str] = None
+    calibration_id: Optional[str] = None
+    suspicious_regions: List[Dict[str, Any]] = Field(default_factory=list)
     details: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -59,6 +67,8 @@ class CustomFeedback(BaseModel):
     explanation: str
     plain_language_summary: Optional[str] = None
     reasons_it_might_be_ai: List[str] = Field(default_factory=list)
+    reasons_it_might_be_generated: List[str] = Field(default_factory=list)
+    reasons_it_might_be_manipulated: List[str] = Field(default_factory=list)
     reasons_it_might_not_be_ai: List[str] = Field(default_factory=list)
     uncertainty_note: Optional[str] = None
     evidence_notes: List[str] = Field(default_factory=list)
@@ -68,7 +78,14 @@ class CustomFeedback(BaseModel):
 class EvidenceSignal(BaseModel):
     source: str
     status: str
-    signal: Literal["authentic", "ai_generated_or_manipulated", "neutral", "unavailable"]
+    signal: Literal[
+        "authentic",
+        "ai_generated",
+        "ai_manipulated",
+        "ai_generated_or_manipulated",
+        "neutral",
+        "unavailable",
+    ]
     confidence: float = Field(..., ge=0, le=1)
     reliability: float = Field(..., ge=0, le=1)
     raw_score: Optional[float] = None
@@ -76,13 +93,22 @@ class EvidenceSignal(BaseModel):
     limitations: List[str] = Field(default_factory=list)
 
 
-class ImageAssessment(BaseModel):
-    verdict: Literal["likely_authentic", "inconclusive", "likely_ai_generated_or_manipulated"]
+class MediaAssessment(BaseModel):
+    verdict: Literal["likely_authentic", "likely_ai_generated", "likely_ai_manipulated", "inconclusive"]
     label: str
     confidence: Literal["low", "moderate", "high"]
+    generation_score: Optional[float] = Field(None, ge=0, le=1)
+    manipulation_score: Optional[float] = Field(None, ge=0, le=1)
+    decision_policy_version: str
+    model_versions: List[str] = Field(default_factory=list)
+    # Deprecated compatibility alias for generation_score.
     detector_score: Optional[float] = Field(None, ge=0, le=1)
     reason: str
     evidence_supporting_authenticity: List[str] = Field(default_factory=list)
+    evidence_supporting_generation: List[str] = Field(default_factory=list)
+    evidence_supporting_manipulation: List[str] = Field(default_factory=list)
+    evidence_conflicting: List[str] = Field(default_factory=list)
+    # Deprecated compatibility union of generation/manipulation concern evidence.
     evidence_raising_concern: List[str] = Field(default_factory=list)
     limitations: List[str] = Field(default_factory=list)
     signals: List[EvidenceSignal] = Field(default_factory=list)
@@ -90,9 +116,9 @@ class ImageAssessment(BaseModel):
 
 class AnalysisResponse(BaseModel):
     content_type: ContentType
-    truth_score: int = Field(..., ge=0, le=100)
-    risk_level: str
-    verdict: str
+    truth_score: int = Field(..., ge=0, le=100, deprecated=True, description="Legacy context score; never use as a media-authenticity conclusion.")
+    risk_level: str = Field(..., deprecated=True, description="Legacy compatibility field. Use assessment.verdict.")
+    verdict: str = Field(..., deprecated=True, description="Legacy compatibility label. Use assessment.verdict.")
     summary: str
     warnings: List[str]
     positive_signals: List[str]
@@ -107,7 +133,7 @@ class AnalysisResponse(BaseModel):
     web_research: Optional[WebResearchResult] = None
     citations: List[Citation] = Field(default_factory=list)
     custom_feedback: Optional[CustomFeedback] = None
-    assessment: Optional[ImageAssessment] = None
+    assessment: Optional[MediaAssessment] = None
 
 
 class VideoAnalysisResponse(AnalysisResponse):

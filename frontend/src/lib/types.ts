@@ -10,6 +10,11 @@ export interface DetectorResult {
   label?: string | null;
   score?: number | null;
   synthetic_probability?: number | null;
+  manipulation_probability?: number | null;
+  task?: "generation" | "manipulation" | "temporal" | "provenance" | "supporting" | null;
+  model_version?: string | null;
+  calibration_id?: string | null;
+  suspicious_regions?: Array<Record<string, unknown>>;
   details?: Record<string, unknown>;
 }
 
@@ -43,13 +48,21 @@ export interface CustomFeedback {
   explanation: string;
   plain_language_summary?: string | null;
   reasons_it_might_be_ai?: string[];
+  reasons_it_might_be_generated?: string[];
+  reasons_it_might_be_manipulated?: string[];
   reasons_it_might_not_be_ai?: string[];
   uncertainty_note?: string | null;
   evidence_notes: string[];
   next_steps: string[];
 }
 
-export type EvidenceSignalValue = "authentic" | "ai_generated_or_manipulated" | "neutral" | "unavailable";
+export type EvidenceSignalValue =
+  | "authentic"
+  | "ai_generated"
+  | "ai_manipulated"
+  | "ai_generated_or_manipulated"
+  | "neutral"
+  | "unavailable";
 
 export interface EvidenceSignal {
   source: string;
@@ -62,13 +75,20 @@ export interface EvidenceSignal {
   limitations: string[];
 }
 
-export interface ImageAssessment {
-  verdict: "likely_authentic" | "inconclusive" | "likely_ai_generated_or_manipulated";
+export interface MediaAssessment {
+  verdict: "likely_authentic" | "likely_ai_generated" | "likely_ai_manipulated" | "inconclusive";
   label: string;
   confidence: "low" | "moderate" | "high";
+  generation_score?: number | null;
+  manipulation_score?: number | null;
+  decision_policy_version: string;
+  model_versions: string[];
   detector_score?: number | null;
   reason: string;
   evidence_supporting_authenticity: string[];
+  evidence_supporting_generation: string[];
+  evidence_supporting_manipulation: string[];
+  evidence_conflicting: string[];
   evidence_raising_concern: string[];
   limitations: string[];
   signals: EvidenceSignal[];
@@ -80,8 +100,11 @@ export interface SuspiciousFrame {
   timestamp_seconds?: number | null;
   truth_score: number;
   synthetic_probability?: number | null;
+  manipulation_probability?: number | null;
   tile_synthetic_probability?: number | null;
   warnings: string[];
+  kind?: "generation" | "manipulation" | "temporal_anomaly" | null;
+  end_timestamp_seconds?: number | null;
 }
 
 export interface AnalysisResult {
@@ -103,7 +126,7 @@ export interface AnalysisResult {
   web_research?: WebResearchResult | null;
   citations?: Citation[];
   custom_feedback?: CustomFeedback | null;
-  assessment?: ImageAssessment | null;
+  assessment?: MediaAssessment | null;
   frames_analyzed?: number;
   suspicious_frames?: SuspiciousFrame[];
 }

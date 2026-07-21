@@ -1,0 +1,48 @@
+{
+  "registry_version": "4.0.0",
+  "models": [
+    {
+      "id": "OwensLab/commfor-model-224",
+      "task": "generation",
+      "role": "primary_general_generation",
+      "license": "MIT",
+      "enabled_by_default": false,
+      "integration_status": "official_repository_adapter_available; pinned checkout and weights required",
+      "url": "https://huggingface.co/OwensLab/commfor-model-224"
+    },
+    {
+      "id": "SPAI",
+      "task": "generation",
+      "role": "uncertain_image_spectral_second_pass",
+      "license": "Apache-2.0",
+      "enabled_by_default": false,
+      "integration_status": "optional_gpu_specialist_not_packaged_on_cpu_host",
+      "url": "https://mever-team.github.io/spai/"
+    },
+    {
+      "id": "truthshield-image-detector-v2",
+      "task": "generation",
+      "role": "legacy_independent_comparison_and_editing_screen",
+      "license": "project-owned weights; training-data licenses must accompany promotion",
+      "enabled_by_default": true,
+      "integration_status": "packaged_rollback"
+    },
+    {
+      "id": "MaskCLIP-compatible-localization",
+      "task": "manipulation",
+      "role": "patch_localization",
+      "license": "unverified_weights_not_redistributed",
+      "enabled_by_default": false,
+      "integration_status": "blocked_until_weight_redistribution_license_or_local_retraining"
+    },
+    {
+      "id": "D3",
+      "task": "temporal",
+      "role": "second_order_video_specialist",
+      "license": "MIT code; verify checkpoint terms",
+      "enabled_by_default": false,
+      "integration_status": "optional_adapter_not_packaged_on_cpu_host",
+      "url": "https://github.com/Zig-HS/D3"
+    }
+  ]
+}

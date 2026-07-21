@@ -86,25 +86,37 @@ class EnhancedSettings:
     enable_local_ai_models: bool
     local_reasoning_base_url: str | None
     ai_image_detector_models: list[str]
+    community_forensics_repo_path: str | None
+    community_forensics_model_id: str | None
+    ai_manipulation_detector_models: list[str]
+    image_transformation_checks: bool
     ai_video_frame_detector_models: list[str]
     ai_video_temporal_model_path: str | None
     video_analysis_mode: str
     video_frame_stride: int
     video_max_frames: int
+    video_keyframe_max: int
+    video_window_max: int
     video_tile_analysis: bool
     video_tile_size: int
     video_tile_overlap: float
     google_vision_api_key: str | None
     google_vision_max_results: int
     monthly_counter_path: Path
+    media_policy_path: str | None
 
 
 def get_settings() -> EnhancedSettings:
-    image_models = _configured_models("AI_IMAGE_DETECTOR_MODELS", _default_image_models())
+    community_repo = os.getenv("COMMUNITY_FORENSICS_REPO_PATH") or None
+    community_model = os.getenv("COMMUNITY_FORENSICS_MODEL_ID") or None
+    image_defaults = _default_image_models()
+    if community_repo and community_model:
+        image_defaults = [f"community-forensics::{community_model}", *image_defaults]
+    image_models = _configured_models("AI_IMAGE_DETECTOR_MODELS", image_defaults)
     video_model = _local_model("training/models/truthshield-video-frame-detector")
     video_models = _configured_models("AI_VIDEO_FRAME_DETECTOR_MODELS", [video_model] if video_model else image_models)
-    requested_video_mode = (os.getenv("VIDEO_ANALYSIS_MODE") or "exhaustive").strip().lower()
-    video_mode = requested_video_mode if requested_video_mode in {"exhaustive", "sampled"} else "exhaustive"
+    requested_video_mode = (os.getenv("VIDEO_ANALYSIS_MODE") or "adaptive").strip().lower()
+    video_mode = requested_video_mode if requested_video_mode in {"adaptive", "exhaustive", "sampled"} else "adaptive"
     return EnhancedSettings(
         enable_enhanced_analysis=_env_bool("ENABLE_ENHANCED_ANALYSIS", True),
         brave_search_api_key=os.getenv("BRAVE_SEARCH_API_KEY") or None,
@@ -113,6 +125,10 @@ def get_settings() -> EnhancedSettings:
         enable_local_ai_models=_env_bool("ENABLE_LOCAL_AI_MODELS", True),
         local_reasoning_base_url=(os.getenv("LOCAL_REASONING_BASE_URL") or "").rstrip("/") or None,
         ai_image_detector_models=image_models,
+        community_forensics_repo_path=community_repo,
+        community_forensics_model_id=community_model,
+        ai_manipulation_detector_models=_configured_models("AI_MANIPULATION_DETECTOR_MODELS", []),
+        image_transformation_checks=_env_bool("IMAGE_TRANSFORMATION_CHECKS", True),
         ai_video_frame_detector_models=video_models,
         ai_video_temporal_model_path=(
             os.getenv("AI_VIDEO_TEMPORAL_MODEL_PATH")
@@ -121,6 +137,8 @@ def get_settings() -> EnhancedSettings:
         video_analysis_mode=video_mode,
         video_frame_stride=_env_int("VIDEO_FRAME_STRIDE", 1, minimum=1),
         video_max_frames=_env_int("VIDEO_MAX_FRAMES", 0, minimum=0),
+        video_keyframe_max=_env_int("VIDEO_KEYFRAME_MAX", 64, minimum=8),
+        video_window_max=_env_int("VIDEO_WINDOW_MAX", 8, minimum=1),
         video_tile_analysis=_env_bool("VIDEO_TILE_ANALYSIS", True),
         video_tile_size=_env_int("VIDEO_TILE_SIZE", 448, minimum=224),
         video_tile_overlap=_env_float("VIDEO_TILE_OVERLAP", 0.15, minimum=0.0, maximum=0.45),
@@ -131,5 +149,9 @@ def get_settings() -> EnhancedSettings:
                 "WEB_RESEARCH_COUNTER_PATH",
                 str(Path(tempfile.gettempdir()) / "truthshield_web_research_counter.json"),
             )
+        ),
+        media_policy_path=(
+            os.getenv("MEDIA_DECISION_POLICY_PATH")
+            or _local_file("training/models/media-policy-v4.json")
         ),
     )

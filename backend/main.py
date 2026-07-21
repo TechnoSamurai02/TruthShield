@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from analyzers.image_analyzer import analyze_image_bytes
+from analyzers.model_registry import model_health
 from analyzers.text_analyzer import analyze_text
 from analyzers.video_analyzer import analyze_video_path
 from models.schemas import AnalysisResponse, TextAnalysisRequest, VideoAnalysisResponse
@@ -24,8 +26,8 @@ from utils.file_utils import (
 
 app = FastAPI(
     title="TruthShield AI Backend",
-    description="Risk-based heuristic analysis for images, videos, and text posts.",
-    version="1.0.0",
+    description="Calibrated, abstention-first media forensics for images, videos, and text context.",
+    version="4.0.0",
 )
 
 LOCAL_FRONTEND_ORIGINS = [
@@ -59,8 +61,13 @@ app.add_middleware(
 
 
 @app.get("/api/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok", "service": "TruthShield AI Backend"}
+async def health() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "service": "TruthShield AI Backend",
+        "version": "4.0.0",
+        "media_detection": model_health(),
+    }
 
 
 @app.post("/api/analyze/image", response_model=AnalysisResponse)

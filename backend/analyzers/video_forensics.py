@@ -193,6 +193,10 @@ class VideoForensicsAccumulator:
                 "label": _probability_label(probability),
                 "score": round(probability, 4),
                 "synthetic_probability": round(probability, 4),
+                "manipulation_probability": None,
+                "task": "temporal",
+                "model_version": "truthshield-temporal-heuristic-v4",
+                "calibration_id": None,
                 "details": {
                     "reasons": summary["temporal_reasons"],
                     "frames_compared": max(0, self.frames_seen - 1),
@@ -226,6 +230,10 @@ def run_trained_video_detector(features: Dict[str, float], model_path: str) -> D
             "label": "likely_ai_generated_video" if probability >= threshold else "lower_ai_video_signal",
             "score": round(probability, 4),
             "synthetic_probability": round(probability, 4),
+            "manipulation_probability": None,
+            "task": "generation",
+            "model_version": str(bundle.get("model_version", Path(model_path).name)) if isinstance(bundle, dict) else Path(model_path).name,
+            "calibration_id": str(bundle.get("calibration_id", "legacy-video-calibration")) if isinstance(bundle, dict) else "legacy-video-calibration",
             "details": {
                 "model_path": model_path,
                 "decision_threshold": threshold,
@@ -244,8 +252,21 @@ def run_trained_video_detector(features: Dict[str, float], model_path: str) -> D
         "label": None,
         "score": None,
         "synthetic_probability": None,
+        "manipulation_probability": None,
+        "task": "generation",
+        "model_version": Path(model_path).name,
         "details": {"reason": reason},
     }
+
+
+def trained_video_sampling_policy(model_path: str) -> str:
+    try:
+        bundle = _load_video_model(str(Path(model_path).expanduser().resolve()))
+    except Exception:
+        return "legacy_uniform16"
+    if isinstance(bundle, dict):
+        return str(bundle.get("sampling_policy") or "legacy_uniform16")
+    return "legacy_uniform16"
 
 
 @functools.lru_cache(maxsize=4)
