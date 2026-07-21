@@ -26,7 +26,17 @@ from training.train_image_detector import (
 from training.train_manipulation_localizer import _balanced_sample_weights, _image_score
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
 class ImageTrainingPipelineTests(unittest.TestCase):
+    def test_training_dependencies_keep_diffusers_on_transformers_4(self) -> None:
+        requirements = (REPO_ROOT / "training" / "requirements-train.txt").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("sentencepiece>=0.1.99,<1.0", requirements)
+        self.assertIn("transformers>=4.43.0,<5.0", requirements)
+
     def test_v4_defactify_split_keeps_caption_and_generator_isolation(self) -> None:
         caption = "the same source caption"
         group_split = _group_split(caption)

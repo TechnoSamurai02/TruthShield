@@ -10,7 +10,9 @@ requests>=2.32.0,<3.0
 scikit-learn==1.6.1
 scipy==1.14.1
 safetensors>=0.4.0,<1.0
+sentencepiece>=0.1.99,<1.0
 torch>=2.3.0
 torchvision>=0.18.0
-transformers>=4.43.0,<6.0
+# Diffusers 0.32-0.36 imports MT5Tokenizer, which Transformers 5 removed.
+transformers>=4.43.0,<5.0
 wandb==0.20.1
