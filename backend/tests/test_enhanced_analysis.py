@@ -21,6 +21,7 @@ from analyzers.ai_detectors import (
     _synthetic_probability,
     combined_synthetic_probability,
     reuse_full_frame_predictions_as_single_tile,
+    run_tiled_manipulation_detectors,
 )
 from analyzers.image_forensics import analyze_image_forensics
 from analyzers.image_decision import assess_image_evidence
@@ -314,6 +315,32 @@ class EnhancedAnalysisTests(unittest.TestCase):
         for left, top, right, bottom in boxes:
             coverage[top:bottom, left:right] = 1
         self.assertTrue(np.all(coverage == 1))
+
+    def test_tiled_manipulation_scan_returns_localized_support(self) -> None:
+        class Classifier:
+            model = SimpleNamespace(config=SimpleNamespace())
+
+            def __call__(self, images, **kwargs):
+                return [
+                    [
+                        {"label": "ai_manipulated", "score": 0.92},
+                        {"label": "real_camera", "score": 0.08},
+                    ]
+                    for _ in images
+                ]
+
+        image = Image.new("RGB", (1000, 731), color=(30, 80, 120))
+        with patch("analyzers.ai_detectors._load_pipeline", return_value=Classifier()):
+            results = run_tiled_manipulation_detectors(image, ["test-manipulation-model"])
+
+        self.assertEqual(len(results), 1)
+        result = results[0]
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["task"], "manipulation")
+        self.assertIsNone(result["synthetic_probability"])
+        self.assertGreater(result["manipulation_probability"], 0.9)
+        self.assertTrue(result["suspicious_regions"])
+        self.assertIn("manipulation_score", result["suspicious_regions"][0])
 
     def test_declared_video_frame_preprocessing_is_applied(self) -> None:
         classifier = SimpleNamespace(

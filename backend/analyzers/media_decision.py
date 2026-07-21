@@ -70,7 +70,10 @@ def assess_media_evidence(
         generated = _probability(combined_synthetic_probability(detectors))
     manipulated = _probability(manipulation_score)
     if manipulated is None and dedicated_manipulation_values:
-        manipulated = _mean(dedicated_manipulation_values)
+        # Full-frame classifiers can dilute a small edited region. The tiled
+        # result is already a robust aggregate over every source pixel, so keep
+        # the strongest dedicated score and let calibration control precision.
+        manipulated = max(dedicated_manipulation_values)
     if manipulated is None and screening_values:
         manipulated = _mean(screening_values)
 

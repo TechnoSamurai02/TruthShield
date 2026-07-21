@@ -26,9 +26,31 @@ The registry is `training/models/model-registry.v4.json`.
 - Community Forensics is supported through the official-repository adapter. Review and clone its MIT repository, install its pinned dependencies, then set `COMMUNITY_FORENSICS_REPO_PATH` and `COMMUNITY_FORENSICS_MODEL_ID=OwensLab/commfor-model-224`. The adapter uses official preprocessing and weights; it does not execute arbitrary Hub code.
 - SPAI is intentionally optional until its pinned code/weights are packaged and CPU behavior is benchmarked. Do not silently replace it with a handcrafted FFT score.
 - Manipulation weights are disabled until redistribution terms are verified. A legacy edited/captioned class can screen for a low editing score, but cannot issue a positive AI-manipulation verdict.
+- When no redistributable specialist weights are available, build the locally derived paired fallback with `prepare_manipulation_pairs.py`. It trains on authentic, fully generated, and locally manipulated classes, preserves parent/source/license metadata, and uses editor families that are isolated across train, tuning, calibration, and locked test. It remains disabled for decisive outcomes until calibration and the locked gate pass.
 - The complete-video scan includes a non-decisive second-order motion screen. The product does not label it “D3” unless the official MIT implementation and an appropriately licensed checkpoint are actually installed and validated.
 
 These restrictions are accuracy features: a missing specialist produces `inconclusive`, not a fabricated substitute score.
+
+Build and train the paired fallback without exposing calibration or locked data to the trainer:
+
+```bash
+python training/prepare_manipulation_pairs.py \
+  --source-dir training/data/defactify_v4 \
+  --output-dir training/data/manipulation_pairs_v4 \
+  --clean-output
+python training/media_manifest.py training/data/manipulation_pairs_v4/manifest.v4.jsonl \
+  --report training/evaluation/manipulation-pairs-v4-leakage.json
+python training/train_image_detector.py \
+  --detector-task manipulation \
+  --data-dir training/data/manipulation_pairs_v4 \
+  --output-dir training/models/truthshield-manipulation-v4-candidate \
+  --base-model training/models/truthshield-image-detector-v4-candidate \
+  --epochs 8 \
+  --batch-size 32 \
+  --resume
+```
+
+The paired generator saves masks and bounding boxes in `localization.v4.jsonl`. Production uses the same configured specialist for a full-frame pass and a tiled localization pass. Do not set `AI_MANIPULATION_DETECTOR_MODELS` in a public deployment until the model license record, calibration artifact, and locked report are packaged.
 
 ## 3. Calibrate only on the calibration split
 

@@ -91,6 +91,43 @@ def run_tiled_image_detectors(
     batch_size: int = 8,
 ) -> List[Dict[str, Any]]:
     """Run every configured model over tiles that collectively cover every source pixel."""
+    return _run_tiled_detectors(
+        image,
+        model_ids,
+        task="generation",
+        tile_size=tile_size,
+        overlap=overlap,
+        batch_size=batch_size,
+    )
+
+
+def run_tiled_manipulation_detectors(
+    image: Image.Image,
+    model_ids: Sequence[str],
+    tile_size: int = 448,
+    overlap: float = 0.15,
+    batch_size: int = 8,
+) -> List[Dict[str, Any]]:
+    """Run dedicated manipulation specialists over localized, full-coverage tiles."""
+    return _run_tiled_detectors(
+        image,
+        model_ids,
+        task="manipulation",
+        tile_size=tile_size,
+        overlap=overlap,
+        batch_size=batch_size,
+    )
+
+
+def _run_tiled_detectors(
+    image: Image.Image,
+    model_ids: Sequence[str],
+    *,
+    task: str,
+    tile_size: int,
+    overlap: float,
+    batch_size: int,
+) -> List[Dict[str, Any]]:
     settings = get_settings()
     if not settings.enable_local_ai_models or not model_ids:
         return []
@@ -99,7 +136,15 @@ def run_tiled_image_detectors(
     tiles, boxes = _covering_tiles(rgb, tile_size=max(224, tile_size), overlap=overlap)
     results: List[Dict[str, Any]] = []
     for model_id in model_ids:
-        results.append(_run_huggingface_detector_batch(tiles, boxes, model_id, batch_size=batch_size))
+        results.append(
+            _run_huggingface_detector_batch(
+                tiles,
+                boxes,
+                model_id,
+                batch_size=batch_size,
+                task=task,
+            )
+        )
     return results
 
 
@@ -361,6 +406,7 @@ def _run_huggingface_detector_batch(
     boxes: Sequence[tuple[int, int, int, int]],
     model_id: str,
     batch_size: int,
+    task: str = "generation",
 ) -> Dict[str, Any]:
     prepared_images = list(images)
     try:
@@ -371,7 +417,7 @@ def _run_huggingface_detector_batch(
         try:
             outputs = classifier(prepared_images, batch_size=max(1, batch_size))
         except Exception as exc:
-            return _model_error(model_id, exc, suffix=":tiled_pixel_scan")
+            return _model_error(model_id, exc, suffix=":tiled_pixel_scan", task=task)
     except ImportError:
         return {
             "name": f"{model_id}:tiled_pixel_scan",
@@ -379,48 +425,75 @@ def _run_huggingface_detector_batch(
             "label": None,
             "score": None,
             "synthetic_probability": None,
+            "manipulation_probability": None,
+            "task": task,
+            "model_version": model_id,
             "details": {"reason": "Install transformers and torch to enable tiled model analysis."},
         }
     except Exception as exc:
-        return _model_error(model_id, exc, suffix=":tiled_pixel_scan")
+        return _model_error(model_id, exc, suffix=":tiled_pixel_scan", task=task)
 
     if outputs and isinstance(outputs, list) and isinstance(outputs[0], dict):
         outputs = [outputs]
     normalized_tiles = [_normalize_outputs(output) for output in outputs] if isinstance(outputs, list) else []
-    probabilities = [_synthetic_probability(output) for output in normalized_tiles if output]
-    probabilities = [probability for probability in probabilities if probability is not None]
-    if not probabilities:
+    probability_mapper = _manipulation_probability if task == "manipulation" else _synthetic_probability
+    indexed_probabilities = [
+        (index, probability)
+        for index, output in enumerate(normalized_tiles)
+        if output
+        for probability in [probability_mapper(output)]
+        if probability is not None
+    ]
+    if not indexed_probabilities:
         return {
             "name": f"{model_id}:tiled_pixel_scan",
-            "status": "error",
+            "status": "unsupported_labels" if normalized_tiles else "error",
             "label": None,
             "score": None,
             "synthetic_probability": None,
-            "details": {"reason": "The model returned no usable tile predictions."},
+            "manipulation_probability": None,
+            "task": task,
+            "model_version": model_id,
+            "details": {"reason": f"The model returned no usable {task} tile predictions."},
         }
 
+    probabilities = [float(probability) for _, probability in indexed_probabilities]
     ordered = sorted(probabilities)
     mean_probability = sum(ordered) / len(ordered)
     p90 = _percentile(ordered, 0.90)
     p95 = _percentile(ordered, 0.95)
     suspicious_ratio = sum(probability >= 0.65 for probability in ordered) / len(ordered)
-    aggregate = mean_probability * 0.55 + p90 * 0.30 + suspicious_ratio * 0.15
+    if task == "manipulation":
+        # A small edit may occupy one tile. Retain a strong localized peak while
+        # still requiring the calibrated threshold and an explicit region.
+        aggregate = (
+            mean_probability * 0.15
+            + p90 * 0.20
+            + p95 * 0.25
+            + max(ordered) * 0.30
+            + suspicious_ratio * 0.10
+        )
+    else:
+        aggregate = mean_probability * 0.55 + p90 * 0.30 + suspicious_ratio * 0.15
     aggregate = max(0.0, min(1.0, aggregate))
-    highest_indices = sorted(range(len(probabilities)), key=lambda index: probabilities[index], reverse=True)[:5]
+    highest_tiles = sorted(indexed_probabilities, key=lambda item: item[1], reverse=True)[:5]
+    score_name = "manipulation_score" if task == "manipulation" else "generation_score"
+    probability_name = "manipulation_probability" if task == "manipulation" else "synthetic_probability"
+    likely_label = "tiled_regions_likely_manipulated" if task == "manipulation" else "tiled_regions_likely_synthetic"
     return {
         "name": f"{model_id}:tiled_pixel_scan",
         "status": "completed",
-        "label": "tiled_regions_likely_synthetic" if aggregate >= 0.65 else "tiled_regions_uncertain" if aggregate >= 0.35 else "tiled_regions_lower_signal",
+        "label": likely_label if aggregate >= 0.65 else "tiled_regions_uncertain" if aggregate >= 0.35 else "tiled_regions_lower_signal",
         "score": round(aggregate, 4),
-        "synthetic_probability": round(aggregate, 4),
-        "manipulation_probability": None,
-        "task": "generation",
+        "synthetic_probability": round(aggregate, 4) if task == "generation" else None,
+        "manipulation_probability": round(aggregate, 4) if task == "manipulation" else None,
+        "task": task,
         "model_version": model_id,
         "calibration_id": "bootstrap-conservative-v4",
         "suspicious_regions": [
-            {"box": list(boxes[index]), "generation_score": round(probabilities[index], 4)}
-            for index in highest_indices
-            if index < len(boxes)
+            {"box": list(boxes[index]), score_name: round(float(probability), 4)}
+            for index, probability in highest_tiles
+            if len(boxes) > 1 and index < len(boxes) and probability >= 0.65
         ],
         "details": {
             "model_provider": "huggingface_local",
@@ -432,8 +505,8 @@ def _run_huggingface_detector_batch(
             "maximum_probability": round(max(ordered), 4),
             "suspicious_tile_ratio": round(suspicious_ratio, 4),
             "highest_risk_tiles": [
-                {"box": list(boxes[index]), "synthetic_probability": round(probabilities[index], 4)}
-                for index in highest_indices
+                {"box": list(boxes[index]), probability_name: round(float(probability), 4)}
+                for index, probability in highest_tiles
                 if index < len(boxes)
             ],
             "note": "Tiles cover the full frame. Each tile is resized to the model input size, so this is supporting evidence rather than literal native-resolution classification.",
@@ -441,7 +514,12 @@ def _run_huggingface_detector_batch(
     }
 
 
-def _model_error(model_id: str, exc: Exception, suffix: str = "") -> Dict[str, Any]:
+def _model_error(
+    model_id: str,
+    exc: Exception,
+    suffix: str = "",
+    task: str = "generation",
+) -> Dict[str, Any]:
     return {
         "name": f"{model_id}{suffix}",
         "status": "error",
@@ -449,7 +527,7 @@ def _model_error(model_id: str, exc: Exception, suffix: str = "") -> Dict[str, A
         "score": None,
         "synthetic_probability": None,
         "manipulation_probability": None,
-        "task": "generation",
+        "task": task,
         "model_version": model_id,
         "details": {"reason": str(exc)[:300]},
     }

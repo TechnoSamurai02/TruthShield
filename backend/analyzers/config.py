@@ -90,6 +90,9 @@ class EnhancedSettings:
     community_forensics_model_id: str | None
     ai_manipulation_detector_models: list[str]
     image_transformation_checks: bool
+    image_tile_analysis: bool
+    image_tile_size: int
+    image_tile_overlap: float
     ai_video_frame_detector_models: list[str]
     ai_video_temporal_model_path: str | None
     video_analysis_mode: str
@@ -129,6 +132,9 @@ def get_settings() -> EnhancedSettings:
         community_forensics_model_id=community_model,
         ai_manipulation_detector_models=_configured_models("AI_MANIPULATION_DETECTOR_MODELS", []),
         image_transformation_checks=_env_bool("IMAGE_TRANSFORMATION_CHECKS", True),
+        image_tile_analysis=_env_bool("IMAGE_TILE_ANALYSIS", True),
+        image_tile_size=_env_int("IMAGE_TILE_SIZE", 448, minimum=224),
+        image_tile_overlap=_env_float("IMAGE_TILE_OVERLAP", 0.15, minimum=0.0, maximum=0.45),
         ai_video_frame_detector_models=video_models,
         ai_video_temporal_model_path=(
             os.getenv("AI_VIDEO_TEMPORAL_MODEL_PATH")

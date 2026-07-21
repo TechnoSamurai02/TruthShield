@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 from PIL import Image
@@ -10,6 +11,8 @@ from PIL import Image
 from training.check_image_robustness import _robustness_variants
 from training.evaluate_image_detector import _likely_ai_threshold_metrics, _three_way_metrics
 from training.prepare_defactify_sample import V4_GENERATOR_SPLITS, _group_split, _target_split
+from training.media_manifest import MediaRecord, read_manifest, sha256_file, validate_records, write_jsonl
+from training.prepare_manipulation_pairs import main as prepare_manipulation_pairs
 from training.train_image_detector import _training_data_files
 
 
@@ -86,6 +89,72 @@ class ImageTrainingPipelineTests(unittest.TestCase):
         self.assertEqual(report["true_ai"], 1)
         self.assertEqual(report["false_ai_alarm"], 1)
         self.assertEqual(report["false_positive_rate"], 0.5)
+
+    def test_paired_manipulation_dataset_is_balanced_and_split_isolated(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            output = root / "paired"
+            records = []
+            for index, split in enumerate(("train", "tuning", "calibration", "locked_test")):
+                authentic_path = source / split / "real_camera" / "authentic.png"
+                generated_path = source / split / "ai_generated" / "generated.png"
+                authentic_path.parent.mkdir(parents=True, exist_ok=True)
+                generated_path.parent.mkdir(parents=True, exist_ok=True)
+                authentic = np.zeros((128, 160, 3), dtype=np.uint8)
+                authentic[:, :, 0] = np.arange(160, dtype=np.uint8)
+                authentic[:, :, 1] = 40 + index * 20
+                Image.fromarray(authentic).save(authentic_path)
+                Image.new("RGB", (160, 128), color=(160, 40 + index * 20, 90)).save(generated_path)
+                for path, label, generator in (
+                    (authentic_path, "real_camera", "authentic"),
+                    (generated_path, "ai_generated", f"held-out-generator-{split}"),
+                ):
+                    records.append(
+                        MediaRecord(
+                            path=path.relative_to(source).as_posix(),
+                            sha256=sha256_file(path),
+                            media_type="image",
+                            class_label=label,
+                            source="unit-test-owned",
+                            license="unit-test-owned",
+                            generator_or_editor=generator,
+                            parent_media=None,
+                            transformation="none",
+                            semantic_category="unit-test",
+                            source_group=f"{split}-{label}",
+                            split=split,
+                        )
+                    )
+            write_jsonl(source / "manifest.v4.jsonl", records)
+            with patch(
+                "sys.argv",
+                [
+                    "prepare_manipulation_pairs.py",
+                    "--source-dir",
+                    str(source),
+                    "--output-dir",
+                    str(output),
+                    "--clean-output",
+                ],
+            ):
+                prepare_manipulation_pairs()
+
+            prepared = list(read_manifest(output / "manifest.v4.jsonl"))
+            report = validate_records(prepared)
+            labels_by_split = {
+                split: [row["class_label"] for row in prepared if row["split"] == split]
+                for split in ("train", "tuning", "calibration", "locked_test")
+            }
+            localized = list(read_manifest(output / "localization.v4.jsonl"))
+
+        self.assertTrue(report["valid"], report["errors"])
+        self.assertEqual(len(prepared), 24)
+        self.assertEqual(len(localized), 8)
+        for labels in labels_by_split.values():
+            self.assertEqual(labels.count("real_camera"), 2)
+            self.assertEqual(labels.count("ai_generated"), 2)
+            self.assertEqual(labels.count("ai_manipulated"), 2)
 
 
 if __name__ == "__main__":

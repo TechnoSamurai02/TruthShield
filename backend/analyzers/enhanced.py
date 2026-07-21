@@ -5,7 +5,12 @@ from typing import Any, Dict, List, Sequence
 
 from PIL import Image
 
-from analyzers.ai_detectors import combined_synthetic_probability, completed_model_count, run_image_detectors
+from analyzers.ai_detectors import (
+    combined_synthetic_probability,
+    completed_model_count,
+    run_image_detectors,
+    run_tiled_manipulation_detectors,
+)
 from analyzers.config import get_settings
 from analyzers.feedback import build_custom_feedback, build_media_feedback
 from analyzers.fingerprints import build_image_fingerprint
@@ -46,6 +51,22 @@ def enhance_image_result(
         )
         technical["transformation_instability"] = stability
         detectors.append(stability["detector"])
+    if (
+        settings.image_tile_analysis
+        and settings.ai_manipulation_detector_models
+        and (image.width > settings.image_tile_size or image.height > settings.image_tile_size)
+    ):
+        # Run localization after controlled-view checks. Otherwise the original
+        # view would contain a full+tile aggregate while transformed views only
+        # contain full-frame scores, creating artificial instability.
+        detectors.extend(
+            run_tiled_manipulation_detectors(
+                image,
+                settings.ai_manipulation_detector_models,
+                tile_size=settings.image_tile_size,
+                overlap=settings.image_tile_overlap,
+            )
+        )
     provenance = verify_image_provenance(content_bytes, filename) if content_bytes else None
     web_research = (
         research_image_context(filename, attachment_fingerprint=attachment_fingerprint, content_bytes=content_bytes)

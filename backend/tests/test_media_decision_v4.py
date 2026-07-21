@@ -62,6 +62,21 @@ class MediaDecisionV4Tests(unittest.TestCase):
         )
         self.assertEqual(assessment["verdict"], "likely_ai_manipulated")
 
+    def test_localized_tile_peak_is_not_diluted_by_full_frame(self) -> None:
+        assessment, _ = assess_media_evidence(
+            [
+                detector(generation=0.10),
+                detector(manipulation=0.20, task="manipulation"),
+                detector(manipulation=0.98, task="manipulation", regions=True),
+            ],
+            {},
+            None,
+            None,
+            media_type="image",
+        )
+        self.assertEqual(assessment["manipulation_score"], 0.98)
+        self.assertEqual(assessment["verdict"], "likely_ai_manipulated")
+
     def test_high_editing_screen_without_specialist_abstains(self) -> None:
         assessment, _ = assess_media_evidence(
             [detector(generation=0.10, manipulation=0.98)], {}, None, None, media_type="image"

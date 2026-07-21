@@ -18,6 +18,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-dir", default="training/data/defactify_sample")
     parser.add_argument("--output-dir", default="training/models/truthshield-image-detector")
     parser.add_argument("--base-model", default="microsoft/resnet-50")
+    parser.add_argument(
+        "--detector-task",
+        choices=("generation", "manipulation"),
+        default="generation",
+        help="Record the specialist task and require its positive training class.",
+    )
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--learning-rate", type=float, default=5e-5)
@@ -77,6 +83,11 @@ def main() -> None:
         dataset["validation"] = split["test"]
 
     labels = dataset["train"].features["label"].names
+    required_label = "ai_manipulated" if args.detector_task == "manipulation" else "ai_generated"
+    if required_label not in labels:
+        raise SystemExit(
+            f"The {args.detector_task} task requires a '{required_label}' class; found {labels}."
+        )
     label2id = {label: index for index, label in enumerate(labels)}
     id2label = {index: label for label, index in label2id.items()}
     print(f"Labels: {labels}", flush=True)
@@ -97,6 +108,8 @@ def main() -> None:
         id2label=id2label,
         ignore_mismatched_sizes=True,
     )
+    model.config.truthshield_detector_task = args.detector_task
+    model.config.truthshield_preprocess_max_dimension = max(224, args.preprocess_max_dimension)
     _reuse_matching_classifier_rows(
         AutoConfig=AutoConfig,
         AutoModelForImageClassification=AutoModelForImageClassification,
@@ -161,7 +174,8 @@ def main() -> None:
         encoding="utf-8",
     )
     print("Saved model.", flush=True)
-    print(f"Set AI_IMAGE_DETECTOR_MODELS={Path(args.output_dir).resolve()}", flush=True)
+    variable = "AI_MANIPULATION_DETECTOR_MODELS" if args.detector_task == "manipulation" else "AI_IMAGE_DETECTOR_MODELS"
+    print(f"Set {variable}={Path(args.output_dir).resolve()}", flush=True)
 
 
 def _build_training_args(TrainingArguments: Any, args: argparse.Namespace) -> Any:
