@@ -51,6 +51,11 @@ def _local_file(relative_path: str) -> str | None:
     return str(candidate) if candidate.is_file() else None
 
 
+def _local_directory_with_file(relative_path: str, filename: str) -> str | None:
+    candidate = Path(__file__).resolve().parents[2] / relative_path
+    return str(candidate) if (candidate / filename).is_file() else None
+
+
 def _default_image_models() -> list[str]:
     for relative_path in (
         "training/models/truthshield-image-detector-v3",
@@ -89,6 +94,7 @@ class EnhancedSettings:
     community_forensics_repo_path: str | None
     community_forensics_model_id: str | None
     ai_manipulation_detector_models: list[str]
+    manipulation_localizer_path: str | None
     image_transformation_checks: bool
     image_tile_analysis: bool
     image_tile_size: int
@@ -131,6 +137,13 @@ def get_settings() -> EnhancedSettings:
         community_forensics_repo_path=community_repo,
         community_forensics_model_id=community_model,
         ai_manipulation_detector_models=_configured_models("AI_MANIPULATION_DETECTOR_MODELS", []),
+        manipulation_localizer_path=(
+            os.getenv("AI_MANIPULATION_LOCALIZER_PATH")
+            or _local_directory_with_file(
+                "training/models/truthshield-manipulation-localizer-v4",
+                "model.ts",
+            )
+        ),
         image_transformation_checks=_env_bool("IMAGE_TRANSFORMATION_CHECKS", True),
         image_tile_analysis=_env_bool("IMAGE_TILE_ANALYSIS", True),
         image_tile_size=_env_int("IMAGE_TILE_SIZE", 448, minimum=224),

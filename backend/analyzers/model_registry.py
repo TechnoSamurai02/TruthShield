@@ -14,7 +14,11 @@ def model_health() -> Dict[str, Any]:
     settings = get_settings()
     policy = load_media_policy(settings.media_policy_path)
     generation = [_artifact_status(model, "generation") for model in settings.ai_image_detector_models]
-    manipulation = [_artifact_status(model, "manipulation") for model in settings.ai_manipulation_detector_models]
+    manipulation_identifiers = [
+        *([settings.manipulation_localizer_path] if settings.manipulation_localizer_path else []),
+        *settings.ai_manipulation_detector_models,
+    ]
+    manipulation = [_artifact_status(model, "manipulation") for model in manipulation_identifiers]
     temporal = (
         [_artifact_status(settings.ai_video_temporal_model_path, "temporal")]
         if settings.ai_video_temporal_model_path
@@ -83,7 +87,13 @@ def _artifact_status(identifier: str | None, task: str) -> Dict[str, Any]:
 def _artifact_files(path: Path) -> list[Path]:
     if path.is_file():
         return [path]
-    preferred = [path / "config.json", path / "model.safetensors"]
+    preferred = [
+        path / "config.json",
+        path / "model.safetensors",
+        path / "model.ts",
+        path / "preprocess.json",
+        path / "truthshield_localizer_metrics.json",
+    ]
     return [item for item in preferred if item.is_file()]
 
 

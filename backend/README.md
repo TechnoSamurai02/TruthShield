@@ -41,6 +41,7 @@ GOOGLE_VISION_MAX_RESULTS=10
 ENABLE_LOCAL_AI_MODELS=true
 AI_IMAGE_DETECTOR_MODELS=Organika/sdxl-detector,dima806/deepfake_vs_real_image_detection
 AI_MANIPULATION_DETECTOR_MODELS=
+AI_MANIPULATION_LOCALIZER_PATH=
 MEDIA_DECISION_POLICY_PATH=
 IMAGE_TRANSFORMATION_CHECKS=true
 IMAGE_TILE_ANALYSIS=true
@@ -59,4 +60,4 @@ COMMUNITY_FORENSICS_MODEL_ID=OwensLab/commfor-model-224
 LOCAL_REASONING_BASE_URL=
 ```
 
-`IMAGE_TILE_ANALYSIS=true` runs configured manipulation specialists over overlapping full-coverage tiles when an image is larger than one tile. Only calibrated high-scoring tiles become suspicious regions; a one-tile image does not fabricate localized support. `VIDEO_ANALYSIS_MODE=adaptive` decodes the complete video cheaply, selects up to 64 diverse/anomalous frames, and builds up to eight temporal windows. `exhaustive` remains available for rollback and debugging. `VIDEO_TILE_ANALYSIS=true` adds overlapping full-coverage model tiles and can be slow on a CPU. Image and video responses use the same four-way policy. Missing providers, metadata, manifests, scores, or web matches return neutral/unavailable signals and never default to AI.
+`AI_MANIPULATION_LOCALIZER_PATH` accepts the directory containing the calibrated TruthShield `model.ts` and `preprocess.json` artifacts. The localizer reports a score and suspicious region, while the shared policy and controlled-view stability check remain responsible for the verdict. `IMAGE_TILE_ANALYSIS=true` runs configured classifier specialists over overlapping full-coverage tiles when an image is larger than one tile. Only calibrated high-scoring regions become suspicious evidence. `VIDEO_ANALYSIS_MODE=adaptive` decodes the complete video cheaply, selects up to 64 diverse/anomalous frames, and builds up to eight temporal windows. `exhaustive` remains available for rollback and debugging. `VIDEO_TILE_ANALYSIS=true` adds overlapping full-coverage model tiles and can be slow on a CPU. Image and video responses use the same four-way policy. Missing providers, metadata, manifests, scores, or web matches return neutral/unavailable signals and never default to AI.

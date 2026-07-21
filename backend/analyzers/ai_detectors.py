@@ -8,6 +8,7 @@ from PIL import Image
 
 from analyzers.community_forensics import run_community_forensics
 from analyzers.config import get_settings
+from analyzers.manipulation_localizer import run_manipulation_localizer
 
 
 SYNTHETIC_LABEL_MARKERS = (
@@ -78,6 +79,8 @@ def run_image_detectors(
     configured_models = list(model_ids) if model_ids is not None else settings.ai_image_detector_models
     for model_id in configured_models:
         results.append(_run_huggingface_detector(image, model_id, task="generation"))
+    if settings.manipulation_localizer_path:
+        results.append(run_manipulation_localizer(image, settings.manipulation_localizer_path))
     for model_id in settings.ai_manipulation_detector_models:
         results.append(_run_huggingface_detector(image, model_id, task="manipulation"))
     return results

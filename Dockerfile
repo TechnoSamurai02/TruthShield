@@ -3,6 +3,7 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV AI_IMAGE_DETECTOR_MODELS=/app/training/models/truthshield-image-detector-v2
+ENV AI_MANIPULATION_LOCALIZER_PATH=/app/training/models/truthshield-manipulation-localizer-v4
 ENV MEDIA_DECISION_POLICY_PATH=/app/training/models/media-policy-v4.json
 ENV VIDEO_ANALYSIS_MODE=adaptive
 ENV VIDEO_KEYFRAME_MAX=64
