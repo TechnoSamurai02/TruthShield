@@ -13,7 +13,11 @@ from training.evaluate_image_detector import _likely_ai_threshold_metrics, _thre
 from training.prepare_defactify_sample import V4_GENERATOR_SPLITS, _group_split, _target_split
 from training.media_manifest import MediaRecord, read_manifest, sha256_file, validate_records, write_jsonl
 from training.prepare_manipulation_pairs import main as prepare_manipulation_pairs
-from training.train_image_detector import _training_data_files
+from training.train_image_detector import (
+    _augment_image,
+    _binary_manipulation_dataset,
+    _training_data_files,
+)
 
 
 class ImageTrainingPipelineTests(unittest.TestCase):
@@ -155,6 +159,49 @@ class ImageTrainingPipelineTests(unittest.TestCase):
             self.assertEqual(labels.count("real_camera"), 2)
             self.assertEqual(labels.count("ai_generated"), 2)
             self.assertEqual(labels.count("ai_manipulated"), 2)
+
+    def test_binary_manipulation_objective_balances_train_only(self) -> None:
+        from datasets import ClassLabel, Dataset, DatasetDict, Features, Value, concatenate_datasets
+
+        features = Features(
+            {
+                "item": Value("int64"),
+                "label": ClassLabel(
+                    names=["ai_generated", "ai_manipulated", "real_camera"]
+                ),
+            }
+        )
+        source = Dataset.from_dict(
+            {"item": [0, 1, 2, 3], "label": [0, 0, 1, 2]},
+            features=features,
+        )
+        converted = _binary_manipulation_dataset(
+            DatasetDict({"train": source, "validation": source}),
+            source_labels=["ai_generated", "ai_manipulated", "real_camera"],
+            ClassLabel=ClassLabel,
+            DatasetDict=DatasetDict,
+            concatenate_datasets=concatenate_datasets,
+            seed=42,
+        )
+
+        train_labels = list(converted["train"]["label"])
+        validation_labels = list(converted["validation"]["label"])
+        self.assertEqual(converted["train"].features["label"].names, ["unaltered_media", "ai_manipulated"])
+        self.assertEqual(train_labels.count(0), train_labels.count(1))
+        self.assertEqual(len(validation_labels), 4)
+        self.assertEqual(validation_labels.count(1), 1)
+
+    def test_manipulation_augmentation_does_not_crop_away_the_edit(self) -> None:
+        image = Image.new("RGB", (100, 100), color=(30, 80, 120))
+        with patch("training.train_image_detector.random.random", side_effect=[1, 0, 1, 1, 1, 1, 1]), patch(
+            "training.train_image_detector.random.uniform", return_value=0.82
+        ), patch("training.train_image_detector.random.randint", return_value=0):
+            cropped = _augment_image(image, allow_random_crop=True)
+        with patch("training.train_image_detector.random.random", side_effect=[1, 1, 1, 1, 1, 1]):
+            preserved = _augment_image(image, allow_random_crop=False)
+
+        self.assertEqual(cropped.size, (82, 82))
+        self.assertEqual(preserved.size, (100, 100))
 
 
 if __name__ == "__main__":

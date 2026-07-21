@@ -24,6 +24,12 @@ def parse_args() -> argparse.Namespace:
         default="generation",
         help="Record the specialist task and require its positive training class.",
     )
+    parser.add_argument(
+        "--manipulation-objective",
+        choices=("binary", "three-class"),
+        default="binary",
+        help="Binary merges authentic and fully generated media into one non-manipulated class.",
+    )
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--learning-rate", type=float, default=5e-5)
@@ -58,7 +64,7 @@ def main() -> None:
         (cache_dir / "hub").mkdir(parents=True, exist_ok=True)
         os.environ.setdefault("HF_HOME", str(cache_dir))
 
-    from datasets import load_dataset
+    from datasets import ClassLabel, DatasetDict, concatenate_datasets, load_dataset
     from transformers import (
         AutoConfig,
         AutoImageProcessor,
@@ -82,6 +88,16 @@ def main() -> None:
         dataset["train"] = split["train"]
         dataset["validation"] = split["test"]
 
+    source_labels = dataset["train"].features["label"].names
+    if args.detector_task == "manipulation" and args.manipulation_objective == "binary":
+        dataset = _binary_manipulation_dataset(
+            dataset,
+            source_labels=source_labels,
+            ClassLabel=ClassLabel,
+            DatasetDict=DatasetDict,
+            concatenate_datasets=concatenate_datasets,
+            seed=args.seed,
+        )
     labels = dataset["train"].features["label"].names
     required_label = "ai_manipulated" if args.detector_task == "manipulation" else "ai_generated"
     if required_label not in labels:
@@ -109,6 +125,9 @@ def main() -> None:
         ignore_mismatched_sizes=True,
     )
     model.config.truthshield_detector_task = args.detector_task
+    model.config.truthshield_manipulation_objective = (
+        args.manipulation_objective if args.detector_task == "manipulation" else None
+    )
     model.config.truthshield_preprocess_max_dimension = max(224, args.preprocess_max_dimension)
     _reuse_matching_classifier_rows(
         AutoConfig=AutoConfig,
@@ -124,7 +143,13 @@ def main() -> None:
             for image in batch["image"]
         ]
         if not args.no_augmentation:
-            images = [_augment_image(image) for image in images]
+            images = [
+                _augment_image(
+                    image,
+                    allow_random_crop=args.detector_task != "manipulation",
+                )
+                for image in images
+            ]
         encoded = processor(images=images, return_tensors="pt")
         encoded["labels"] = batch["label"]
         return encoded
@@ -157,7 +182,11 @@ def main() -> None:
     if resume_checkpoint is not None:
         print(f"Resuming from checkpoint: {resume_checkpoint}", flush=True)
     trainer.train(resume_from_checkpoint=str(resume_checkpoint) if resume_checkpoint is not None else None)
-    validation_metrics = trainer.evaluate(metric_key_prefix="validation")
+    raw_validation_metrics = trainer.evaluate()
+    validation_metrics = {
+        (f"validation_{key[5:]}" if key.startswith("eval_") else key): value
+        for key, value in raw_validation_metrics.items()
+    }
     all_metrics: Dict[str, Any] = {"validation": validation_metrics}
     print(validation_metrics, flush=True)
     if test_dataset is not None:
@@ -253,6 +282,59 @@ def _training_data_files(data_dir: Path) -> Dict[str, List[str]]:
     return result
 
 
+def _binary_manipulation_dataset(
+    dataset: Any,
+    *,
+    source_labels: List[str],
+    ClassLabel: Any,
+    DatasetDict: Any,
+    concatenate_datasets: Any,
+    seed: int,
+) -> Any:
+    """Build a balanced binary task without changing the on-disk audit manifest."""
+    if "ai_manipulated" not in source_labels:
+        raise SystemExit(
+            "The binary manipulation objective requires an 'ai_manipulated' source class."
+        )
+    positive_id = source_labels.index("ai_manipulated")
+    target_feature = ClassLabel(names=["unaltered_media", "ai_manipulated"])
+    remapped = {}
+    for split_name, split in dataset.items():
+        original_labels = [int(value) for value in split["label"]]
+        binary_labels = [1 if value == positive_id else 0 for value in original_labels]
+        converted = split.remove_columns("label").add_column("label", binary_labels)
+        converted = converted.cast_column("label", target_feature)
+        if split_name == "train":
+            positive_indices = [
+                index for index, value in enumerate(binary_labels) if value == 1
+            ]
+            negative_count = len(binary_labels) - len(positive_indices)
+            if not positive_indices or negative_count <= 0:
+                raise SystemExit("Binary manipulation training requires positive and negative examples.")
+            # The paired corpus contains two negative families (authentic and
+            # generated) for one manipulation family. Duplicate positives only
+            # in the training view; random image transforms make the copies
+            # distinct while validation remains untouched and representative.
+            extra_positive_count = max(0, negative_count - len(positive_indices))
+            if extra_positive_count:
+                repeats = []
+                while len(repeats) < extra_positive_count:
+                    repeats.extend(positive_indices)
+                converted = concatenate_datasets(
+                    [converted, converted.select(repeats[:extra_positive_count])]
+                )
+            converted = converted.shuffle(seed=seed)
+        remapped[split_name] = converted
+    result = DatasetDict(remapped)
+    train_labels = [int(value) for value in result["train"]["label"]]
+    print(
+        "Binary manipulation training distribution: "
+        f"unaltered={train_labels.count(0)}, manipulated={train_labels.count(1)}",
+        flush=True,
+    )
+    return result
+
+
 def _reuse_matching_classifier_rows(
     AutoConfig: Any,
     AutoModelForImageClassification: Any,
@@ -271,7 +353,11 @@ def _reuse_matching_classifier_rows(
         }
     except Exception:
         configured_label2id = {}
-    if not set(configured_label2id) & set(target_label2id):
+    derivable_unaltered = (
+        "unaltered_media" in target_label2id
+        and bool({"ai_generated", "real_camera"} & set(configured_label2id))
+    )
+    if not set(configured_label2id) & set(target_label2id) and not derivable_unaltered:
         return
     # Load the original weights only when its config contains semantic rows
     # that can actually be reused by the new classifier.
@@ -286,7 +372,11 @@ def _reuse_matching_classifier_rows(
             for label, index in getattr(source_model.config, "label2id", {}).items()
         }
         shared = sorted(set(source_label2id) & set(target_label2id))
-        if not shared:
+        derivable_unaltered = (
+            "unaltered_media" in target_label2id
+            and bool({"ai_generated", "real_camera"} & set(source_label2id))
+        )
+        if not shared and not derivable_unaltered:
             return
         source_head = _classification_linear(source_model, len(source_label2id))
         target_head = _classification_linear(target_model, len(target_label2id))
@@ -299,7 +389,28 @@ def _reuse_matching_classifier_rows(
                 target_head.weight[target_index].copy_(source_head.weight[source_index])
                 if target_head.bias is not None and source_head.bias is not None:
                     target_head.bias[target_index].copy_(source_head.bias[source_index])
-        print(f"Reused learned classifier rows for: {shared}", flush=True)
+            if derivable_unaltered:
+                source_indices = [
+                    source_label2id[label]
+                    for label in ("ai_generated", "real_camera")
+                    if label in source_label2id
+                ]
+                target_index = target_label2id["unaltered_media"]
+                target_head.weight[target_index].copy_(
+                    torch.stack(
+                        [source_head.weight[index] for index in source_indices]
+                    ).mean(dim=0)
+                )
+                if target_head.bias is not None and source_head.bias is not None:
+                    target_head.bias[target_index].copy_(
+                        torch.stack(
+                            [source_head.bias[index] for index in source_indices]
+                        ).mean(dim=0)
+                    )
+        reused = list(shared)
+        if derivable_unaltered:
+            reused.append("unaltered_media (derived)")
+        print(f"Reused learned classifier rows for: {reused}", flush=True)
     finally:
         del source_model
 
@@ -367,11 +478,11 @@ def compute_metrics(eval_prediction: Any) -> Dict[str, float]:
     }
 
 
-def _augment_image(image: Image.Image) -> Image.Image:
+def _augment_image(image: Image.Image, *, allow_random_crop: bool = True) -> Image.Image:
     image = image.convert("RGB")
     if random.random() < 0.5:
         image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-    if random.random() < 0.45:
+    if allow_random_crop and random.random() < 0.45:
         width, height = image.size
         scale = random.uniform(0.82, 1.0)
         crop_width = max(1, int(width * scale))

@@ -43,7 +43,7 @@ python training/media_manifest.py training/data/manipulation_pairs_v4/manifest.v
 python training/train_image_detector.py \
   --detector-task manipulation \
   --data-dir training/data/manipulation_pairs_v4 \
-  --output-dir training/models/truthshield-manipulation-v4-candidate \
+  --output-dir training/models/truthshield-manipulation-binary-v4-candidate \
   --base-model training/models/truthshield-image-detector-v4-candidate \
   --epochs 8 \
   --batch-size 32 \
