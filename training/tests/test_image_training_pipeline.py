@@ -15,6 +15,7 @@ from training.prepare_defactify_sample import V4_GENERATOR_SPLITS, _group_split,
 from training.media_manifest import MediaRecord, read_manifest, sha256_file, validate_records, write_jsonl
 from training.prepare_manipulation_pairs import main as prepare_manipulation_pairs
 from training.prepare_diffusion_manipulation_pairs import (
+    GENERATION_VALIDATION_VERSION,
     SPLIT_MODEL_SPECS,
     _completed_parent_indices,
     _is_filtered_output,
@@ -274,12 +275,14 @@ class ImageTrainingPipelineTests(unittest.TestCase):
                         "mask_path": mask.relative_to(root).as_posix(),
                     }
                 )
-            (record_dir / "000000.json").write_text(
-                json.dumps(
-                    {"parent_index": 0, "records": paths, "localization": localization}
-                ),
-                encoding="utf-8",
-            )
+            bundle_path = record_dir / "000000.json"
+            bundle = {
+                "parent_index": 0,
+                "generation_validation_version": GENERATION_VALIDATION_VERSION,
+                "records": paths,
+                "localization": localization,
+            }
+            bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
 
             complete_for_two = _completed_parent_indices(
                 record_dir,
@@ -291,9 +294,17 @@ class ImageTrainingPipelineTests(unittest.TestCase):
                 root,
                 required_variants=8,
             )
+            bundle.pop("generation_validation_version")
+            bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+            legacy_bundle = _completed_parent_indices(
+                record_dir,
+                root,
+                required_variants=2,
+            )
 
         self.assertEqual(complete_for_two, {0})
         self.assertEqual(complete_for_eight, set())
+        self.assertEqual(legacy_bundle, set())
 
     def test_diffusion_generator_rejects_safety_checker_black_frames(self) -> None:
         self.assertTrue(_is_filtered_output(Image.new("RGB", (32, 32), "black")))

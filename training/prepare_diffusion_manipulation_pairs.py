@@ -26,6 +26,7 @@ GENERATED_LABELS = {"generated", "ai_generated"}
 SUPPORTED_SPLITS = ("train", "tuning", "calibration", "locked_test")
 DATASET_LICENSE = "source-license-retained; local derivative for detector research"
 MAX_GENERATION_ATTEMPTS = 6
+GENERATION_VALIDATION_VERSION = "safety-filter-retry-v2"
 
 # An editor family never crosses a split. Do not casually change this mapping:
 # generator separation is the point of this dataset.
@@ -387,6 +388,7 @@ def _generate_parent_bundle(
     return {
         "parent_index": index,
         "split": split,
+        "generation_validation_version": GENERATION_VALIDATION_VERSION,
         "records": records,
         "localization": localization,
     }
@@ -524,7 +526,8 @@ def _completed_parent_indices(
             ]
             localized = list(bundle.get("localization", []))
             if (
-                len(localized) >= required_variants
+                bundle.get("generation_validation_version") == GENERATION_VALIDATION_VERSION
+                and len(localized) >= required_variants
                 and referenced
                 and all(item.is_file() for item in referenced)
                 and _localized_outputs_are_usable(localized, output_dir)
