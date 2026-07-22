@@ -46,3 +46,15 @@ and a newly constructed locked generator-family suite.
 Only aggregate reports are committed. Per-file locked predictions and media are
 kept out of the repository to reduce the chance of accidental failure-driven
 tuning.
+
+## Manipulation localizer v3 full-data result
+
+The expanded LR-ASPP localizer was trained on 2,440 validated training records
+and evaluated on 750 editor-isolated tuning records. Controlled-view evaluation
+produced ROC-AUC 0.814688 and average precision 0.704737. Its best constrained
+rule achieved 95.24% precision, 0.4% authentic false warnings, no generated
+false-manipulation warnings, and 8% manipulation recall.
+
+This is an improvement over the v2 pilot's 1.6% safe recall, but remains too low
+for production promotion. The candidate is retained as a reproducible experiment
+and is not calibrated, locked-tested, packaged, or deployed.
