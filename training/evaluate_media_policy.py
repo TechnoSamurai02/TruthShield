@@ -128,7 +128,10 @@ def _classify(row: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:
     manipulation = float(manipulation) if manipulation is not None else None
     generation_cfg = policy["generation"]
     manipulation_cfg = policy["manipulation"]
-    if generation_cfg.get("enabled", True) and generation >= float(generation_cfg["upper_threshold"]):
+    force_inconclusive = str(row.get("force_inconclusive", "false")).lower() in {"1", "true", "yes"}
+    if force_inconclusive:
+        verdict = "inconclusive"
+    elif generation_cfg.get("enabled", True) and generation >= float(generation_cfg["upper_threshold"]):
         verdict = "likely_ai_generated"
     elif (
         manipulation is not None
