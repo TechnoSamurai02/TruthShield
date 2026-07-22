@@ -157,7 +157,7 @@ def main() -> None:
     try:
         import torch
         import torch.nn.functional as functional
-        from torch.cuda.amp import GradScaler, autocast
+        from torch.amp import GradScaler, autocast
         from torch.utils.data import DataLoader, WeightedRandomSampler
         from torchvision.models import MobileNet_V3_Large_Weights
         from torchvision.models.segmentation import lraspp_mobilenet_v3_large
@@ -217,7 +217,7 @@ def main() -> None:
         T_max=max(1, args.epochs),
         eta_min=args.learning_rate * 0.05,
     )
-    scaler = GradScaler(enabled=True)
+    scaler = GradScaler("cuda", enabled=True)
     start_epoch = 0
     best_score = -1.0
     best_epoch = 0
@@ -248,7 +248,7 @@ def main() -> None:
             images = batch["pixel_values"].cuda(non_blocking=True)
             masks = batch["mask"].cuda(non_blocking=True)
             optimizer.zero_grad(set_to_none=True)
-            with autocast(enabled=True):
+            with autocast("cuda", enabled=True):
                 logits = model(images)["out"]
                 logits = functional.interpolate(
                     logits,
@@ -273,9 +273,12 @@ def main() -> None:
         validation = evaluate_loader(model, tuning_loader, torch=torch)
         validation["training_loss"] = running_loss / max(1, len(train_loader))
         validation["epoch"] = epoch + 1
+        safe_threshold = validation.get("best_safe_threshold")
+        safe_recall = float(safe_threshold.get("recall", 0.0)) if isinstance(safe_threshold, dict) else 0.0
         selection_score = (
-            0.65 * float(validation["image_average_precision"])
-            + 0.35 * float(validation["pixel_f1"])
+            0.45 * float(validation["image_average_precision"])
+            + 0.20 * float(validation["pixel_f1"])
+            + 0.35 * safe_recall
         )
         validation["selection_score"] = selection_score
         history.append(validation)
@@ -314,6 +317,7 @@ def main() -> None:
     report = {
         "model_type": "torchvision-lraspp-mobilenet-v3-large",
         "detector_task": "manipulation-localization",
+        "training_objective_version": "pixel-dice-plus-top1pct-mil-v2",
         "best_epoch": best_epoch,
         "best_selection_score": best_score,
         "best_tuning_metrics": best.get("metrics", {}),
@@ -348,12 +352,13 @@ def main() -> None:
     print("This remains a candidate until calibration and locked promotion gates pass.", flush=True)
 
 
-def evaluate_loader(model: Any, loader: Any, *, torch: Any) -> dict[str, float]:
+def evaluate_loader(model: Any, loader: Any, *, torch: Any) -> dict[str, Any]:
     from sklearn.metrics import average_precision_score, roc_auc_score
 
     model.eval()
     image_scores: list[float] = []
     image_labels: list[int] = []
+    image_classes: list[str] = []
     true_positive = false_positive = false_negative = 0
     with torch.inference_mode():
         for batch in loader:
@@ -374,6 +379,7 @@ def evaluate_loader(model: Any, loader: Any, *, torch: Any) -> dict[str, float]:
                 true_positive += int(torch.logical_and(predicted, actual).sum().item())
                 false_positive += int(torch.logical_and(predicted, ~actual).sum().item())
                 false_negative += int(torch.logical_and(~predicted, actual).sum().item())
+            image_classes.extend(str(value) for value in batch["class_label"])
     precision = true_positive / max(1, true_positive + false_positive)
     recall = true_positive / max(1, true_positive + false_negative)
     pixel_f1 = 2 * precision * recall / max(1e-12, precision + recall)
@@ -387,19 +393,60 @@ def evaluate_loader(model: Any, loader: Any, *, torch: Any) -> dict[str, float]:
         "pixel_iou": float(true_positive / max(1, true_positive + false_positive + false_negative)),
         "image_roc_auc": float(roc_auc_score(labels, scores)),
         "image_average_precision": float(average_precision_score(labels, scores)),
+        "best_safe_threshold": _best_safe_threshold(image_scores, image_classes),
     }
 
 
 def _segmentation_loss(logits: Any, masks: Any, *, functional: Any, torch: Any) -> Any:
     positives = masks.sum()
     negatives = masks.numel() - positives
-    pos_weight = torch.clamp(negatives / torch.clamp(positives, min=1.0), 1.0, 20.0)
+    pos_weight = torch.clamp(negatives / torch.clamp(positives, min=1.0), 1.0, 8.0)
     bce = functional.binary_cross_entropy_with_logits(logits, masks, pos_weight=pos_weight)
     probabilities = torch.sigmoid(logits)
     intersection = (probabilities * masks).sum(dim=(1, 2, 3))
     denominator = probabilities.sum(dim=(1, 2, 3)) + masks.sum(dim=(1, 2, 3))
     dice_loss = 1.0 - ((2.0 * intersection + 1.0) / (denominator + 1.0)).mean()
-    return 0.60 * bce + 0.40 * dice_loss
+    flat_logits = logits.flatten(1)
+    top_count = max(1, int(round(flat_logits.shape[1] * 0.01)))
+    image_logits = torch.topk(flat_logits, k=top_count, dim=1).values.mean(dim=1)
+    image_targets = masks.flatten(1).amax(dim=1).gt(0.5).to(dtype=logits.dtype)
+    image_bce = functional.binary_cross_entropy_with_logits(image_logits, image_targets)
+    return 0.45 * bce + 0.25 * dice_loss + 0.30 * image_bce
+
+
+def _best_safe_threshold(scores: list[float], class_labels: list[str]) -> dict[str, float | int] | None:
+    if len(scores) != len(class_labels) or not scores:
+        return None
+    normalized = [str(value).strip().lower() for value in class_labels]
+    positive_count = sum(value in MANIPULATED_LABELS for value in normalized)
+    authentic_count = sum(value in {"authentic", "real", "real_camera"} for value in normalized)
+    generated_count = sum(value in {"generated", "ai_generated"} for value in normalized)
+    if not positive_count or not authentic_count or not generated_count:
+        return None
+    best: dict[str, float | int] | None = None
+    for threshold in sorted(set(float(value) for value in scores), reverse=True):
+        selected = [index for index, score in enumerate(scores) if float(score) >= threshold]
+        true_positive = sum(normalized[index] in MANIPULATED_LABELS for index in selected)
+        false_authentic = sum(normalized[index] in {"authentic", "real", "real_camera"} for index in selected)
+        false_generated = sum(normalized[index] in {"generated", "ai_generated"} for index in selected)
+        precision = true_positive / max(1, len(selected))
+        recall = true_positive / positive_count
+        authentic_rate = false_authentic / authentic_count
+        generated_rate = false_generated / generated_count
+        if precision < 0.95 or authentic_rate > 0.01 or generated_rate > 0.01:
+            continue
+        candidate: dict[str, float | int] = {
+            "threshold": float(threshold),
+            "precision": float(precision),
+            "recall": float(recall),
+            "authentic_false_warning_rate": float(authentic_rate),
+            "generated_false_manipulation_rate": float(generated_rate),
+            "predicted_manipulated": len(selected),
+            "true_manipulated": int(true_positive),
+        }
+        if best is None or float(candidate["recall"]) > float(best["recall"]):
+            best = candidate
+    return best
 
 
 def _image_score(probability: np.ndarray, top_fraction: float = 0.01) -> float:
@@ -433,6 +480,17 @@ def _augment_pair(image: Image.Image, mask: Image.Image) -> tuple[Image.Image, I
         buffer.seek(0)
         with Image.open(buffer) as handle:
             image = handle.convert("RGB")
+    if random.random() < 0.35:
+        original_size = image.size
+        scale = random.uniform(0.45, 0.85)
+        reduced = (
+            max(64, round(original_size[0] * scale)),
+            max(64, round(original_size[1] * scale)),
+        )
+        image = image.resize(reduced, Image.Resampling.LANCZOS).resize(
+            original_size,
+            Image.Resampling.LANCZOS,
+        )
     return image, mask
 
 
@@ -478,6 +536,7 @@ def _config_dict(args: argparse.Namespace) -> dict[str, Any]:
         "seed": args.seed,
         "model_type": "torchvision-lraspp-mobilenet-v3-large",
         "task": "manipulation-localization",
+        "training_objective_version": "pixel-dice-plus-top1pct-mil-v2",
     }
 
 

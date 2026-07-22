@@ -23,7 +23,12 @@ from training.train_image_detector import (
     _binary_manipulation_dataset,
     _training_data_files,
 )
-from training.train_manipulation_localizer import _balanced_sample_weights, _image_score
+from training.train_manipulation_localizer import (
+    _balanced_sample_weights,
+    _best_safe_threshold,
+    _image_score,
+    _segmentation_loss,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -302,6 +307,31 @@ class ImageTrainingPipelineTests(unittest.TestCase):
 
         self.assertAlmostEqual(sum(weight for label, weight in zip(labels, weights) if not label), 1.0)
         self.assertAlmostEqual(sum(weight for label, weight in zip(labels, weights) if label), 1.0)
+
+    def test_localizer_safe_threshold_prioritizes_low_false_warnings(self) -> None:
+        metrics = _best_safe_threshold(
+            [0.99, 0.97, 0.80, 0.75, 0.20, 0.10],
+            ["ai_manipulated", "ai_manipulated", "real_camera", "ai_generated", "real_camera", "ai_generated"],
+        )
+
+        self.assertIsNotNone(metrics)
+        self.assertEqual(metrics["threshold"], 0.97)
+        self.assertEqual(metrics["precision"], 1.0)
+        self.assertEqual(metrics["recall"], 1.0)
+
+    def test_image_level_loss_penalizes_a_hot_false_positive_region(self) -> None:
+        import torch
+        import torch.nn.functional as functional
+
+        masks = torch.zeros((1, 1, 32, 32), dtype=torch.float32)
+        clean = torch.full_like(masks, -6.0)
+        false_positive = clean.clone()
+        false_positive[:, :, 8:16, 8:16] = 6.0
+
+        clean_loss = _segmentation_loss(clean, masks, functional=functional, torch=torch)
+        false_positive_loss = _segmentation_loss(false_positive, masks, functional=functional, torch=torch)
+
+        self.assertGreater(float(false_positive_loss), float(clean_loss))
 
 
 if __name__ == "__main__":
