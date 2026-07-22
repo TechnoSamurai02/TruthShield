@@ -588,8 +588,15 @@ def _finalize_dataset(output_dir: Path, *, source_manifest: Path) -> dict[str, A
                 bundle = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
+            bundle_localization = list(bundle.get("localization", []))
+            if (
+                bundle.get("generation_validation_version") != GENERATION_VALIDATION_VERSION
+                or not bundle_localization
+                or not _localized_outputs_are_usable(bundle_localization, output_dir)
+            ):
+                continue
             records.extend(bundle.get("records", []))
-            localization.extend(bundle.get("localization", []))
+            localization.extend(bundle_localization)
     records.sort(key=lambda row: (str(row.get("split")), str(row.get("path"))))
     localization.sort(key=lambda row: (str(row.get("split")), str(row.get("path"))))
     _write_jsonl(output_dir / "manifest.v4.jsonl", records)
