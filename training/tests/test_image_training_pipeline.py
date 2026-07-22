@@ -28,6 +28,7 @@ from training.train_manipulation_localizer import (
     _balanced_sample_weights,
     _best_safe_threshold,
     _image_score,
+    _largest_component_area_ratio,
     _segmentation_loss,
 )
 
@@ -256,6 +257,15 @@ class ImageTrainingPipelineTests(unittest.TestCase):
 
         self.assertGreater(score, 0.79)
         self.assertLess(score, 0.81)
+
+    def test_localizer_largest_component_area_ignores_isolated_pixels(self) -> None:
+        probability = np.zeros((1, 100, 100), dtype=np.float32)
+        probability[:, 10:30, 20:50] = 0.9
+        probability[:, 80, 80] = 0.99
+
+        area = _largest_component_area_ratio(probability, threshold=0.5)
+
+        self.assertAlmostEqual(area, 0.06)
 
     def test_localized_support_requires_a_meaningful_component(self) -> None:
         isolated = np.zeros((100, 100), dtype=np.float32)

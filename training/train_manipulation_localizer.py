@@ -17,6 +17,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from training.media_manifest import read_manifest
+from training.optimize_manipulation_decision import optimize as optimize_manipulation_rule
 
 
 MANIPULATED_LABELS = {"manipulated", "ai_manipulated"}
@@ -273,8 +274,8 @@ def main() -> None:
         validation = evaluate_loader(model, tuning_loader, torch=torch)
         validation["training_loss"] = running_loss / max(1, len(train_loader))
         validation["epoch"] = epoch + 1
-        safe_threshold = validation.get("best_safe_threshold")
-        safe_recall = float(safe_threshold.get("recall", 0.0)) if isinstance(safe_threshold, dict) else 0.0
+        safe_rule = validation.get("best_safe_localized_rule")
+        safe_recall = float(safe_rule.get("recall", 0.0)) if isinstance(safe_rule, dict) else 0.0
         selection_score = (
             0.45 * float(validation["image_average_precision"])
             + 0.20 * float(validation["pixel_f1"])
@@ -317,7 +318,7 @@ def main() -> None:
     report = {
         "model_type": "torchvision-lraspp-mobilenet-v3-large",
         "detector_task": "manipulation-localization",
-        "training_objective_version": "pixel-dice-plus-top1pct-mil-v2",
+        "training_objective_version": "pixel-dice-plus-top1pct-mil-area-selection-v3",
         "best_epoch": best_epoch,
         "best_selection_score": best_score,
         "best_tuning_metrics": best.get("metrics", {}),
@@ -340,6 +341,7 @@ def main() -> None:
                 "std": [0.229, 0.224, 0.225],
                 "image_score": "mean of highest 1 percent of manipulation probabilities",
                 "pixel_threshold_requires_calibration": True,
+                "minimum_localized_area_ratio_requires_calibration": True,
                 "model_output": "single-channel manipulation logits",
             },
             indent=2,
@@ -357,6 +359,7 @@ def evaluate_loader(model: Any, loader: Any, *, torch: Any) -> dict[str, Any]:
 
     model.eval()
     image_scores: list[float] = []
+    image_areas: list[float] = []
     image_labels: list[int] = []
     image_classes: list[str] = []
     true_positive = false_positive = false_negative = 0
@@ -372,7 +375,9 @@ def evaluate_loader(model: Any, loader: Any, *, torch: Any) -> dict[str, Any]:
                 align_corners=False,
             )
             for probability, mask, label in zip(probabilities, masks, batch["label"]):
-                image_scores.append(_image_score(probability.detach().cpu().numpy()))
+                probability_array = probability.detach().cpu().numpy()
+                image_scores.append(_image_score(probability_array))
+                image_areas.append(_largest_component_area_ratio(probability_array, threshold=0.5))
                 image_labels.append(int(label))
                 predicted = probability >= 0.5
                 actual = mask >= 0.5
@@ -385,6 +390,23 @@ def evaluate_loader(model: Any, loader: Any, *, torch: Any) -> dict[str, Any]:
     pixel_f1 = 2 * precision * recall / max(1e-12, precision + recall)
     labels = np.asarray(image_labels, dtype=np.int64)
     scores = np.asarray(image_scores, dtype=np.float64)
+    localized_rule_report = optimize_manipulation_rule(
+        [
+            {
+                "label": class_label,
+                "score": score,
+                "area": area,
+                "view_range": 0.0,
+                "localized_support": area >= 0.001,
+                "stable": True,
+            }
+            for score, area, class_label in zip(image_scores, image_areas, image_classes)
+        ],
+        minimum_precision=0.95,
+        authentic_false_warning_limit=0.01,
+        generated_false_warning_limit=0.01,
+        max_view_range=0.18,
+    )
     return {
         "records": int(len(labels)),
         "pixel_precision": float(precision),
@@ -394,6 +416,7 @@ def evaluate_loader(model: Any, loader: Any, *, torch: Any) -> dict[str, Any]:
         "image_roc_auc": float(roc_auc_score(labels, scores)),
         "image_average_precision": float(average_precision_score(labels, scores)),
         "best_safe_threshold": _best_safe_threshold(image_scores, image_classes),
+        "best_safe_localized_rule": localized_rule_report["best_rule"],
     }
 
 
@@ -456,6 +479,17 @@ def _image_score(probability: np.ndarray, top_fraction: float = 0.01) -> float:
     count = max(1, int(round(len(flattened) * top_fraction)))
     start = max(0, len(flattened) - count)
     return float(np.partition(flattened, start)[start:].mean())
+
+
+def _largest_component_area_ratio(probability: np.ndarray, threshold: float = 0.5) -> float:
+    import cv2
+
+    values = np.asarray(probability, dtype=np.float32).squeeze()
+    binary = (values >= threshold).astype(np.uint8)
+    count, _, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    if count <= 1:
+        return 0.0
+    return float(int(stats[1:, cv2.CC_STAT_AREA].max()) / max(1, binary.size))
 
 
 def _balanced_sample_weights(labels: list[int]) -> list[float]:
@@ -536,7 +570,7 @@ def _config_dict(args: argparse.Namespace) -> dict[str, Any]:
         "seed": args.seed,
         "model_type": "torchvision-lraspp-mobilenet-v3-large",
         "task": "manipulation-localization",
-        "training_objective_version": "pixel-dice-plus-top1pct-mil-v2",
+        "training_objective_version": "pixel-dice-plus-top1pct-mil-area-selection-v3",
     }
 
 
