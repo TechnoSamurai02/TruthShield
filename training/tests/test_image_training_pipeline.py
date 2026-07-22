@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 import tempfile
 from pathlib import Path
@@ -15,6 +16,7 @@ from training.media_manifest import MediaRecord, read_manifest, sha256_file, val
 from training.prepare_manipulation_pairs import main as prepare_manipulation_pairs
 from training.prepare_diffusion_manipulation_pairs import (
     SPLIT_MODEL_SPECS,
+    _completed_parent_indices,
     _random_inpainting_mask,
 )
 from training.optimize_manipulation_decision import optimize
@@ -247,6 +249,48 @@ class ImageTrainingPipelineTests(unittest.TestCase):
         self.assertTrue(np.array_equal(np.asarray(first), np.asarray(second)))
         self.assertGreaterEqual(coverage, 0.045)
         self.assertLessEqual(coverage, 0.36)
+
+    def test_diffusion_resume_reopens_parents_when_more_variants_are_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            record_dir = root / "records" / "train"
+            record_dir.mkdir(parents=True)
+            paths = []
+            localization = []
+            for index in range(2):
+                image = root / "train" / f"edit-{index}.png"
+                mask = root / "localization_masks" / "train" / f"mask-{index}.png"
+                image.parent.mkdir(parents=True, exist_ok=True)
+                mask.parent.mkdir(parents=True, exist_ok=True)
+                image.write_bytes(b"image")
+                mask.write_bytes(b"mask")
+                paths.append({"path": image.relative_to(root).as_posix()})
+                localization.append(
+                    {
+                        "path": image.relative_to(root).as_posix(),
+                        "mask_path": mask.relative_to(root).as_posix(),
+                    }
+                )
+            (record_dir / "000000.json").write_text(
+                json.dumps(
+                    {"parent_index": 0, "records": paths, "localization": localization}
+                ),
+                encoding="utf-8",
+            )
+
+            complete_for_two = _completed_parent_indices(
+                record_dir,
+                root,
+                required_variants=2,
+            )
+            complete_for_eight = _completed_parent_indices(
+                record_dir,
+                root,
+                required_variants=8,
+            )
+
+        self.assertEqual(complete_for_two, {0})
+        self.assertEqual(complete_for_eight, set())
 
     def test_localizer_score_uses_a_region_not_one_hot_pixel(self) -> None:
         probability = np.zeros((1, 100, 100), dtype=np.float32)

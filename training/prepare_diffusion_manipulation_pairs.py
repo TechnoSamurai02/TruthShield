@@ -125,7 +125,11 @@ def main() -> None:
     spec = SPLIT_MODEL_SPECS[args.split]
     record_dir = output_dir / "records" / args.split
     record_dir.mkdir(parents=True, exist_ok=True)
-    completed = _completed_parent_indices(record_dir, output_dir)
+    completed = _completed_parent_indices(
+        record_dir,
+        output_dir,
+        required_variants=variants,
+    )
     pending = [index for index in range(len(authentic_rows)) if index not in completed]
 
     print(f"Split: {args.split}", flush=True)
@@ -182,7 +186,13 @@ def main() -> None:
         "split": args.split,
         "model": spec,
         "requested_parents": len(authentic_rows),
-        "completed_parents": len(_completed_parent_indices(record_dir, output_dir)),
+        "completed_parents": len(
+            _completed_parent_indices(
+                record_dir,
+                output_dir,
+                required_variants=variants,
+            )
+        ),
         "manifest_records_for_split": len(split_records),
         "localized_records_for_split": sum(
             1 for row in report["localization"] if row["split"] == args.split
@@ -466,7 +476,12 @@ def _stable_seed(seed: int, split: str, index: int, variant: int) -> int:
     return int(seed + split_offset + index * 1009 + variant * 97)
 
 
-def _completed_parent_indices(record_dir: Path, output_dir: Path) -> set[int]:
+def _completed_parent_indices(
+    record_dir: Path,
+    output_dir: Path,
+    *,
+    required_variants: int,
+) -> set[int]:
     completed = set()
     for path in sorted(record_dir.glob("*.json")) if record_dir.is_dir() else []:
         try:
@@ -478,7 +493,12 @@ def _completed_parent_indices(record_dir: Path, output_dir: Path) -> set[int]:
                 output_dir / str(row["mask_path"])
                 for row in bundle.get("localization", [])
             ]
-            if referenced and all(item.is_file() for item in referenced):
+            localized = list(bundle.get("localization", []))
+            if (
+                len(localized) >= required_variants
+                and referenced
+                and all(item.is_file() for item in referenced)
+            ):
                 completed.add(int(bundle["parent_index"]))
         except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
             continue
