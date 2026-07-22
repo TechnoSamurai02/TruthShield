@@ -39,7 +39,7 @@ WEB_RESEARCH_MONTHLY_LIMIT=150
 GOOGLE_VISION_API_KEY=
 GOOGLE_VISION_MAX_RESULTS=10
 ENABLE_LOCAL_AI_MODELS=true
-AI_IMAGE_DETECTOR_MODELS=Organika/sdxl-detector,dima806/deepfake_vs_real_image_detection
+AI_IMAGE_DETECTOR_MODELS=community-forensics::OwensLab/commfor-model-224
 AI_IMAGE_FUSION_MODEL_PATH=
 AI_MANIPULATION_DETECTOR_MODELS=
 AI_MANIPULATION_LOCALIZER_PATH=
@@ -62,3 +62,8 @@ LOCAL_REASONING_BASE_URL=
 ```
 
 `AI_MANIPULATION_LOCALIZER_PATH` accepts the directory containing the calibrated TruthShield `model.ts` and `preprocess.json` artifacts. The localizer reports a score and suspicious region, while the shared policy and controlled-view stability check remain responsible for the verdict. `IMAGE_TILE_ANALYSIS=true` runs configured classifier specialists over overlapping full-coverage tiles when an image is larger than one tile. Only calibrated high-scoring regions become suspicious evidence. `VIDEO_ANALYSIS_MODE=adaptive` decodes the complete video cheaply, selects up to 64 diverse/anomalous frames, and builds up to eight temporal windows. `exhaustive` remains available for rollback and debugging. `VIDEO_TILE_ANALYSIS=true` adds overlapping full-coverage model tiles and can be slow on a CPU. Image and video responses use the same four-way policy. Missing providers, metadata, manifests, scores, or web matches return neutral/unavailable signals and never default to AI.
+
+The production container keeps the packaged TruthShield image model and adds the
+pinned Community Forensics specialist. Their scores are used conservatively:
+large disagreement forces an inconclusive assessment. Rejected fusion and
+manipulation-localizer candidates are not configured in production.

@@ -142,6 +142,11 @@ def _run_tiled_detectors(
     tiles, boxes = _covering_tiles(rgb, tile_size=max(224, tile_size), overlap=overlap)
     results: List[Dict[str, Any]] = []
     for model_id in model_ids:
+        if model_id.startswith("community-forensics::"):
+            # This specialist already runs on the complete frame through its
+            # official adapter. The prefixed identifier is not a Transformers
+            # batch-pipeline model, so it must not be sent through tiled loading.
+            continue
         results.append(
             _run_huggingface_detector_batch(
                 tiles,

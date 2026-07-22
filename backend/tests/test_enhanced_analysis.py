@@ -21,6 +21,7 @@ from analyzers.ai_detectors import (
     _synthetic_probability,
     combined_synthetic_probability,
     reuse_full_frame_predictions_as_single_tile,
+    run_tiled_image_detectors,
     run_tiled_manipulation_detectors,
 )
 from analyzers.image_forensics import analyze_image_forensics
@@ -315,6 +316,19 @@ class EnhancedAnalysisTests(unittest.TestCase):
         for left, top, right, bottom in boxes:
             coverage[top:bottom, left:right] = 1
         self.assertTrue(np.all(coverage == 1))
+
+    def test_tiled_scan_skips_full_frame_community_specialist(self) -> None:
+        settings = SimpleNamespace(enable_local_ai_models=True)
+        with patch("analyzers.ai_detectors.get_settings", return_value=settings), patch(
+            "analyzers.ai_detectors._run_huggingface_detector_batch"
+        ) as batch_detector:
+            results = run_tiled_image_detectors(
+                Image.new("RGB", (640, 480), "white"),
+                ["community-forensics::OwensLab/commfor-model-224"],
+            )
+
+        self.assertEqual(results, [])
+        batch_detector.assert_not_called()
 
     def test_tiled_manipulation_scan_returns_localized_support(self) -> None:
         class Classifier:
