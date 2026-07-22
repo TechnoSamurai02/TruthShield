@@ -1,0 +1,99 @@
+{
+  "confusion_counts": {
+    "ai_generated->inconclusive": 160,
+    "ai_generated->likely_ai_generated": 90,
+    "real_camera->inconclusive": 248,
+    "real_camera->likely_ai_generated": 2
+  },
+  "media_type": "image",
+  "metrics": {
+    "authentic_false_ai_rate": 0.008,
+    "bootstrap_95_percent_intervals": {
+      "authentic_false_ai_rate": [
+        0.0,
+        0.020080321285140562
+      ],
+      "decisive_coverage": [
+        0.152,
+        0.218
+      ]
+    },
+    "decisive_ai_precision": 0.9782608695652174,
+    "decisive_coverage": 0.184,
+    "generated_verdict_precision": 0.9782608695652174,
+    "generation_calibration_error": 0.05551132050000001,
+    "generation_roc_auc": 0.87648,
+    "manipulated_verdict_precision": 0.0,
+    "manipulation_calibration_error": null,
+    "manipulation_roc_auc": null,
+    "synthetic_false_authentic_rate": 0.0
+  },
+  "per_class": {
+    "authentic": {
+      "count": 250,
+      "decisive_coverage": 0.008,
+      "precision": 0.0,
+      "recall": 0.0,
+      "specificity": 1.0
+    },
+    "generated": {
+      "count": 250,
+      "decisive_coverage": 0.36,
+      "precision": 0.9782608695652174,
+      "recall": 0.36,
+      "specificity": 0.992
+    },
+    "manipulated": {
+      "count": 0,
+      "decisive_coverage": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "specificity": 1.0
+    }
+  },
+  "per_generator": {
+    "authentic:authentic": {
+      "count": 250,
+      "decisive_accuracy": 0.0,
+      "decisive_coverage": 0.008,
+      "precision": 0.0,
+      "recall": 0.0,
+      "specificity": 1.0
+    },
+    "generated:midjourney-6": {
+      "count": 250,
+      "decisive_accuracy": 1.0,
+      "decisive_coverage": 0.36,
+      "precision": 0.9782608695652174,
+      "recall": 0.36,
+      "specificity": 0.992
+    }
+  },
+  "per_hard_real_category": {
+    "unspecified": {
+      "count": 250,
+      "error_rate": 0.008
+    }
+  },
+  "per_transformation": {
+    "authentic:jpeg_quality_92_export": {
+      "count": 250,
+      "error_rate": 0.008
+    },
+    "generated:jpeg_quality_92_export": {
+      "count": 250,
+      "error_rate": 0.0
+    }
+  },
+  "promoted": false,
+  "promotion_gates": {
+    "authentic_false_ai_rate_within_limit": true,
+    "decisive_coverage_within_limit": false,
+    "generated_verdict_precision_at_least_95_percent": true,
+    "manipulated_verdict_precision_at_least_95_percent": true,
+    "no_hard_real_category_regression": true,
+    "no_supported_transformation_regression": true,
+    "synthetic_false_authentic_rate_within_limit": true
+  },
+  "record_count": 500
+}

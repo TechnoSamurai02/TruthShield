@@ -1,0 +1,32 @@
+{
+  "authentic_count": 250,
+  "component_diagnostics": {
+    "community_forensics_score": {
+      "average_precision": 0.901886,
+      "roc_auc": 0.898368
+    },
+    "comparison_model_score": {
+      "average_precision": 0.49869,
+      "roc_auc": 0.482688
+    },
+    "generation_score": {
+      "average_precision": 0.884889,
+      "roc_auc": 0.87648
+    }
+  },
+  "generated_count": 250,
+  "generation_roc_auc": 0.87648,
+  "max_view_score_range": 0.18,
+  "model_versions": {
+    "community_forensics": "OwensLab/commfor-model-224",
+    "comparison_model": "image-comparison-v4-pilot",
+    "fusion_inputs": {
+      "community_forensics": "OwensLab/commfor-model-224",
+      "community_forensics_commit": "ee5b71d43db0f3779e1edd64ee927b13f2dd6ad4",
+      "truthshield_comparison": "image-comparison-v4-pilot"
+    }
+  },
+  "record_count": 500,
+  "split": "locked_test",
+  "unstable_across_views": 2
+}
