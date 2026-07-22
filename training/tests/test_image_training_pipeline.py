@@ -17,6 +17,7 @@ from training.prepare_diffusion_manipulation_pairs import (
     SPLIT_MODEL_SPECS,
     _random_inpainting_mask,
 )
+from training.optimize_manipulation_decision import optimize
 from training.evaluate_manipulation_localizer import _localized_support, _threshold_metrics
 from training.train_image_detector import (
     _augment_image,
@@ -318,6 +319,28 @@ class ImageTrainingPipelineTests(unittest.TestCase):
         self.assertEqual(metrics["threshold"], 0.97)
         self.assertEqual(metrics["precision"], 1.0)
         self.assertEqual(metrics["recall"], 1.0)
+
+    def test_manipulation_optimizer_can_require_a_meaningful_region(self) -> None:
+        rows = [
+            {"label": "real_camera", "score": 0.95, "area": 0.01},
+            {"label": "ai_generated", "score": 0.94, "area": 0.01},
+            {"label": "ai_manipulated", "score": 0.90, "area": 0.20},
+            {"label": "ai_manipulated", "score": 0.85, "area": 0.15},
+        ]
+        for row in rows:
+            row.update({"view_range": 0.02, "localized_support": True, "stable": True})
+
+        report = optimize(
+            rows,
+            minimum_precision=0.95,
+            authentic_false_warning_limit=0.01,
+            generated_false_warning_limit=0.01,
+            max_view_range=0.18,
+        )
+
+        self.assertEqual(report["best_rule"]["precision"], 1.0)
+        self.assertEqual(report["best_rule"]["recall"], 1.0)
+        self.assertEqual(report["best_rule"]["minimum_localized_area_ratio"], 0.15)
 
     def test_image_level_loss_penalizes_a_hot_false_positive_region(self) -> None:
         import torch
