@@ -14,6 +14,11 @@ def model_health() -> Dict[str, Any]:
     settings = get_settings()
     policy = load_media_policy(settings.media_policy_path)
     generation = [_artifact_status(model, "generation") for model in settings.ai_image_detector_models]
+    generation_fusion = (
+        _artifact_status(settings.image_generation_fusion_path, "generation_fusion")
+        if settings.image_generation_fusion_path
+        else None
+    )
     manipulation_identifiers = [
         *([settings.manipulation_localizer_path] if settings.manipulation_localizer_path else []),
         *settings.ai_manipulation_detector_models,
@@ -31,6 +36,8 @@ def model_health() -> Dict[str, Any]:
         "checksum_sha256": None,
     }
     generation_ready = bool(generation) and all(item["status"] in {"available_for_lazy_load", "remote_configured"} for item in generation)
+    if generation_fusion is not None:
+        generation_ready = generation_ready and generation_fusion["status"] == "available_for_lazy_load"
     manipulation_ready = bool(manipulation) and all(item["status"] in {"available_for_lazy_load", "remote_configured"} for item in manipulation)
     manipulation_screen_ready = manipulation_ready or _has_editing_screen(settings.ai_image_detector_models)
     calibration_ready = calibration["status"] == "available_for_lazy_load"
@@ -40,6 +47,7 @@ def model_health() -> Dict[str, Any]:
         "calibration_status": policy.get("calibration_status", "unknown"),
         "required_models": {
             "generation": generation,
+            "generation_fusion": generation_fusion,
             "manipulation": manipulation,
             "video_temporal": temporal,
         },

@@ -18,7 +18,7 @@ def run_community_forensics(
     if not official_repo_path:
         return _unavailable(name, "Set COMMUNITY_FORENSICS_REPO_PATH to a reviewed checkout of the official MIT repository.")
     repo = Path(official_repo_path).expanduser().resolve()
-    required = [repo / "models.py", repo / "dataprocessor_hf.py", repo / "dataloader.py", repo / "LICENSE"]
+    required = [repo / "models.py", repo / "LICENSE"]
     missing = [path.name for path in required if not path.is_file()]
     if missing:
         return _unavailable(name, f"The configured Community Forensics checkout is missing: {', '.join(missing)}")
@@ -29,10 +29,8 @@ def run_community_forensics(
     if "mit license" not in license_text:
         return _unavailable(name, "The configured checkout does not contain the expected MIT license text.")
     try:
-        model, processor, torch = _load_official_model(str(repo), model_id)
-        values = processor.preprocess(image.convert("RGB"), mode="test")["pixel_values"]
-        if getattr(values, "ndim", 0) == 3:
-            values = values.unsqueeze(0)
+        model, torch = _load_official_model(str(repo), model_id)
+        values = _official_test_preprocess(image.convert("RGB"), torch=torch)
         with torch.inference_mode():
             probability = float(torch.sigmoid(model(values.to("cpu"))).reshape(-1)[0].item())
     except ImportError as exc:
@@ -60,7 +58,7 @@ def run_community_forensics(
 
 
 @functools.lru_cache(maxsize=2)
-def _load_official_model(repo_path: str, model_id: str) -> tuple[Any, Any, Any]:
+def _load_official_model(repo_path: str, model_id: str) -> tuple[Any, Any]:
     try:
         import torch
     except Exception as exc:
@@ -68,14 +66,28 @@ def _load_official_model(repo_path: str, model_id: str) -> tuple[Any, Any, Any]:
     if repo_path not in sys.path:
         sys.path.insert(0, repo_path)
     models = _load_module("_truthshield_commfor_models", Path(repo_path) / "models.py")
-    processor_module = _load_module(
-        "_truthshield_commfor_processor",
-        Path(repo_path) / "dataprocessor_hf.py",
-    )
     model = models.ViTClassifier.from_pretrained(model_id, device="cpu")
     model = model.to("cpu").eval()
-    processor = processor_module.CommForImageProcessor(size=224)
-    return model, processor, torch
+    return model, torch
+
+
+def _official_test_preprocess(image: Image.Image, *, torch: Any) -> Any:
+    width, height = image.size
+    scale = 256.0 / max(1, min(width, height))
+    resized = image.resize(
+        (max(224, round(width * scale)), max(224, round(height * scale))),
+        Image.Resampling.BILINEAR,
+    )
+    left = max(0, (resized.width - 224) // 2)
+    top = max(0, (resized.height - 224) // 2)
+    cropped = resized.crop((left, top, left + 224, top + 224))
+    import numpy as np
+
+    array = np.asarray(cropped, dtype=np.float32) / 255.0
+    values = torch.from_numpy(array.transpose(2, 0, 1)).unsqueeze(0)
+    mean = torch.tensor([0.485, 0.456, 0.406], dtype=values.dtype).view(1, 3, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225], dtype=values.dtype).view(1, 3, 1, 1)
+    return (values - mean) / std
 
 
 def _load_module(name: str, path: Path) -> Any:

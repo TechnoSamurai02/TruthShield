@@ -8,6 +8,7 @@ from PIL import Image
 
 from analyzers.community_forensics import run_community_forensics
 from analyzers.config import get_settings
+from analyzers.image_fusion import FUSION_NAME, run_image_generation_fusion
 from analyzers.manipulation_localizer import run_manipulation_localizer
 
 
@@ -79,6 +80,8 @@ def run_image_detectors(
     configured_models = list(model_ids) if model_ids is not None else settings.ai_image_detector_models
     for model_id in configured_models:
         results.append(_run_huggingface_detector(image, model_id, task="generation"))
+    if settings.image_generation_fusion_path:
+        results.append(run_image_generation_fusion(results, settings.image_generation_fusion_path))
     if settings.manipulation_localizer_path:
         results.append(run_manipulation_localizer(image, settings.manipulation_localizer_path))
     for model_id in settings.ai_manipulation_detector_models:
@@ -198,6 +201,16 @@ def highest_synthetic_probability(detectors: List[Dict[str, Any]]) -> float | No
 
 
 def combined_synthetic_probability(detectors: List[Dict[str, Any]]) -> float | None:
+    fused = [
+        float(detector["synthetic_probability"])
+        for detector in detectors
+        if detector.get("name") == FUSION_NAME
+        and detector.get("status") == "completed"
+        and isinstance(detector.get("synthetic_probability"), (int, float))
+        and math.isfinite(float(detector["synthetic_probability"]))
+    ]
+    if fused:
+        return max(0.0, min(1.0, fused[-1]))
     learned_probabilities = []
     fallback_probabilities = []
     for detector in detectors:
@@ -207,6 +220,8 @@ def combined_synthetic_probability(detectors: List[Dict[str, Any]]) -> float | N
         if not isinstance(probability, (int, float)) or not math.isfinite(float(probability)):
             continue
         name = str(detector.get("name") or "")
+        if name == FUSION_NAME:
+            continue
         if name == "local_heuristic_synthetic_likelihood":
             fallback_probabilities.append((float(probability), 1.0))
             continue

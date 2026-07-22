@@ -91,6 +91,7 @@ class EnhancedSettings:
     enable_local_ai_models: bool
     local_reasoning_base_url: str | None
     ai_image_detector_models: list[str]
+    image_generation_fusion_path: str | None
     community_forensics_repo_path: str | None
     community_forensics_model_id: str | None
     ai_manipulation_detector_models: list[str]
@@ -134,6 +135,10 @@ def get_settings() -> EnhancedSettings:
         enable_local_ai_models=_env_bool("ENABLE_LOCAL_AI_MODELS", True),
         local_reasoning_base_url=(os.getenv("LOCAL_REASONING_BASE_URL") or "").rstrip("/") or None,
         ai_image_detector_models=image_models,
+        image_generation_fusion_path=(
+            os.getenv("AI_IMAGE_FUSION_MODEL_PATH")
+            or _local_file("training/models/truthshield-image-fusion-v4.joblib")
+        ),
         community_forensics_repo_path=community_repo,
         community_forensics_model_id=community_model,
         ai_manipulation_detector_models=_configured_models("AI_MANIPULATION_DETECTOR_MODELS", []),
