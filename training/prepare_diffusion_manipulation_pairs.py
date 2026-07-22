@@ -11,6 +11,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +25,7 @@ AUTHENTIC_LABELS = {"authentic", "real", "real_camera"}
 GENERATED_LABELS = {"generated", "ai_generated"}
 SUPPORTED_SPLITS = ("train", "tuning", "calibration", "locked_test")
 DATASET_LICENSE = "source-license-retained; local derivative for detector research"
+MAX_GENERATION_ATTEMPTS = 6
 
 # An editor family never crosses a split. Do not casually change this mapping:
 # generator separation is the point of this dataset.
@@ -298,28 +300,53 @@ def _generate_parent_bundle(
         item_seed = _stable_seed(seed, split, index, variant)
         randomizer = random.Random(item_seed)
         mask = _random_inpainting_mask((resolution, resolution), randomizer)
-        prompt = PROMPTS[randomizer.randrange(len(PROMPTS))]
-        torch_generator = torch.Generator(device="cuda").manual_seed(item_seed)
-        call_kwargs: dict[str, Any] = {
-            "prompt": prompt,
-            "image": original,
-            "mask_image": mask,
-            "generator": torch_generator,
-            "num_inference_steps": steps,
-        }
+        inpainted: Image.Image | None = None
+        prompt = ""
+        successful_attempt = 0
         parameters = inspect.signature(pipeline.__call__).parameters
-        if "height" in parameters:
-            call_kwargs["height"] = resolution
-        if "width" in parameters:
-            call_kwargs["width"] = resolution
-        if "strength" in parameters:
-            call_kwargs["strength"] = 0.98
-        if "guidance_scale" in parameters:
-            call_kwargs["guidance_scale"] = 7.5
-        result = pipeline(**call_kwargs)
-        if not result.images or result.images[0] is None:
-            raise RuntimeError("The inpainting pipeline returned no image (possibly safety-filtered).")
-        inpainted = result.images[0].convert("RGB").resize(original.size, Image.Resampling.LANCZOS)
+        for attempt in range(MAX_GENERATION_ATTEMPTS):
+            attempt_seed = item_seed + attempt * 100_003
+            prompt = PROMPTS[(randomizer.randrange(len(PROMPTS)) + attempt) % len(PROMPTS)]
+            torch_generator = torch.Generator(device="cuda").manual_seed(attempt_seed)
+            call_kwargs: dict[str, Any] = {
+                "prompt": prompt,
+                "image": original,
+                "mask_image": mask,
+                "generator": torch_generator,
+                "num_inference_steps": steps,
+            }
+            if "height" in parameters:
+                call_kwargs["height"] = resolution
+            if "width" in parameters:
+                call_kwargs["width"] = resolution
+            if "strength" in parameters:
+                call_kwargs["strength"] = 0.98
+            if "guidance_scale" in parameters:
+                call_kwargs["guidance_scale"] = 7.5
+            result = pipeline(**call_kwargs)
+            candidate = result.images[0] if getattr(result, "images", None) else None
+            if candidate is None or _result_was_safety_filtered(result):
+                print(
+                    f"Retrying parent {index} variant {variant}: safety-filtered output "
+                    f"(attempt {attempt + 1}/{MAX_GENERATION_ATTEMPTS}).",
+                    flush=True,
+                )
+                continue
+            candidate = candidate.convert("RGB").resize(original.size, Image.Resampling.LANCZOS)
+            if _is_filtered_output(candidate):
+                print(
+                    f"Retrying parent {index} variant {variant}: unusable near-black output "
+                    f"(attempt {attempt + 1}/{MAX_GENERATION_ATTEMPTS}).",
+                    flush=True,
+                )
+                continue
+            inpainted = candidate
+            successful_attempt = attempt + 1
+            break
+        if inpainted is None:
+            raise RuntimeError(
+                f"All {MAX_GENERATION_ATTEMPTS} attempts were safety-filtered for variant {variant}."
+            )
         alpha = mask.filter(ImageFilter.GaussianBlur(radius=max(2, resolution // 128)))
         manipulated = Image.composite(inpainted, original, alpha)
         ground_truth = alpha.point(lambda value: 255 if value >= 8 else 0)
@@ -350,6 +377,8 @@ def _generate_parent_bundle(
                 "suspicious_region": list(bounds),
                 "mask_coverage": round(_mask_coverage(ground_truth), 6),
                 "prompt": prompt,
+                "generation_attempts": successful_attempt,
+                "safety_checker_passed": True,
                 "editor_model_id": spec["model_id"],
                 "editor_model_license": spec["license"],
                 "editor_model_license_url": spec["license_url"],
@@ -498,11 +527,52 @@ def _completed_parent_indices(
                 len(localized) >= required_variants
                 and referenced
                 and all(item.is_file() for item in referenced)
+                and _localized_outputs_are_usable(localized, output_dir)
             ):
                 completed.add(int(bundle["parent_index"]))
         except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
             continue
     return completed
+
+
+def _result_was_safety_filtered(result: Any) -> bool:
+    flags = getattr(result, "nsfw_content_detected", None)
+    if flags is None:
+        return False
+    if isinstance(flags, (list, tuple)):
+        return any(bool(value) for value in flags)
+    return bool(flags)
+
+
+def _is_filtered_output(image: Image.Image) -> bool:
+    values = np.asarray(image.convert("RGB"), dtype=np.uint8)
+    if not values.size:
+        return True
+    nearly_black = np.max(values, axis=2) <= 2
+    return bool(float(nearly_black.mean()) >= 0.95)
+
+
+def _localized_outputs_are_usable(
+    localized: list[dict[str, Any]],
+    output_dir: Path,
+) -> bool:
+    for row in localized:
+        try:
+            with Image.open(output_dir / str(row["path"])) as handle:
+                edited = np.asarray(handle.convert("RGB"), dtype=np.uint8)
+            with Image.open(output_dir / str(row["mask_path"])) as handle:
+                mask = np.asarray(handle.convert("L"), dtype=np.uint8)
+        except (OSError, KeyError, ValueError):
+            return False
+        if edited.shape[:2] != mask.shape or not edited.size:
+            return False
+        core = mask >= 250
+        if not bool(core.any()):
+            return False
+        near_black_core = np.max(edited[core], axis=1) <= 2
+        if float(near_black_core.mean()) >= 0.90:
+            return False
+    return True
 
 
 def _finalize_dataset(output_dir: Path, *, source_manifest: Path) -> dict[str, Any]:

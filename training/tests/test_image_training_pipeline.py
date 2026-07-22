@@ -17,6 +17,7 @@ from training.prepare_manipulation_pairs import main as prepare_manipulation_pai
 from training.prepare_diffusion_manipulation_pairs import (
     SPLIT_MODEL_SPECS,
     _completed_parent_indices,
+    _is_filtered_output,
     _random_inpainting_mask,
 )
 from training.optimize_manipulation_decision import optimize
@@ -262,8 +263,10 @@ class ImageTrainingPipelineTests(unittest.TestCase):
                 mask = root / "localization_masks" / "train" / f"mask-{index}.png"
                 image.parent.mkdir(parents=True, exist_ok=True)
                 mask.parent.mkdir(parents=True, exist_ok=True)
-                image.write_bytes(b"image")
-                mask.write_bytes(b"mask")
+                Image.new("RGB", (32, 32), (90, 130, 170)).save(image)
+                mask_image = Image.new("L", (32, 32), 0)
+                mask_image.paste(255, (8, 8, 24, 24))
+                mask_image.save(mask)
                 paths.append({"path": image.relative_to(root).as_posix()})
                 localization.append(
                     {
@@ -291,6 +294,10 @@ class ImageTrainingPipelineTests(unittest.TestCase):
 
         self.assertEqual(complete_for_two, {0})
         self.assertEqual(complete_for_eight, set())
+
+    def test_diffusion_generator_rejects_safety_checker_black_frames(self) -> None:
+        self.assertTrue(_is_filtered_output(Image.new("RGB", (32, 32), "black")))
+        self.assertFalse(_is_filtered_output(Image.new("RGB", (32, 32), (90, 130, 170))))
 
     def test_localizer_score_uses_a_region_not_one_hot_pixel(self) -> None:
         probability = np.zeros((1, 100, 100), dtype=np.float32)
